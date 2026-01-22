@@ -10,194 +10,12 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor, QFont, QIcon, QClipboard, QGuiApplication
 
-# --- Constants & Styles ---
+# Import the new theme manager
+from theme_manager import THEMES
+
+# --- Constants ---
 DB_FILE = "budget_data.db"
 CURRENT_YEAR = 2026
-
-STYLE_SHEET = """
-QMainWindow {
-    background-color: #F9FAFB;
-}
-QWidget {
-    font-family: 'Segoe UI', 'Roboto', sans-serif;
-    font-size: 14px;
-    color: #374151;
-}
-
-/* --- TABS --- */
-QTabWidget::pane {
-    border: 1px solid #E5E7EB;
-    background: white;
-    border-radius: 4px;
-}
-QTabBar::tab {
-    background: #F3F4F6;
-    border: 1px solid #E5E7EB;
-    padding: 8px 16px;
-    margin-right: 2px;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
-    color: #6B7280;
-    font-weight: bold;
-}
-QTabBar::tab:selected {
-    background: #FFFFFF;
-    border-bottom-color: #FFFFFF;
-    color: #1F2937;
-}
-
-/* --- HEADER STYLES --- */
-QFrame#Header {
-    background-color: #0F172A;
-}
-QFrame#Header QLabel {
-    color: #FFFFFF;
-}
-QLabel#HeaderTitle {
-    color: #FFFFFF;
-    font-size: 20px;
-    font-weight: bold;
-}
-QLabel#HeaderSubtitle {
-    color: #94A3B8;
-    font-size: 13px;
-}
-
-/* --- SIDEBAR --- */
-QFrame#Sidebar {
-    background-color: #FFFFFF;
-    border-right: 1px solid #E5E7EB;
-}
-QLabel#SectionTitle {
-    color: #374151;
-    font-weight: bold;
-    font-size: 14px;
-    padding-top: 10px;
-    padding-bottom: 5px;
-}
-
-/* --- INPUTS --- */
-QLineEdit {
-    border: 1px solid #D1D5DB;
-    border-radius: 4px;
-    padding: 6px;
-    background-color: #FFFFFF;
-    color: #374151;
-    selection-background-color: #10B981;
-}
-QLineEdit:focus {
-    border: 2px solid #3B82F6;
-}
-QComboBox {
-    background-color: #FFFFFF;
-    border: 1px solid #D1D5DB;
-    border-radius: 4px;
-    padding: 5px;
-    color: #374151;
-}
-QComboBox::drop-down {
-    border: 0px; 
-    background-color: transparent;
-}
-QComboBox QAbstractItemView {
-    background-color: #FFFFFF;
-    color: #374151;
-    selection-background-color: #EFF6FF;
-    selection-color: #1F2937;
-}
-
-/* --- BUTTONS --- */
-QPushButton#AddButton {
-    background-color: #F3F4F6;
-    border: 1px solid #D1D5DB;
-    border-radius: 4px;
-    color: #374151;
-    padding: 6px;
-    font-weight: bold;
-}
-QPushButton#AddButton:hover {
-    background-color: #E5E7EB;
-}
-QPushButton#CopyButton {
-    background-color: #059669;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-weight: bold;
-}
-QPushButton#CopyButton:hover {
-    background-color: #047857;
-}
-QPushButton#DeleteButton {
-    background-color: #EF4444;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-weight: bold;
-}
-
-/* --- TABLE (High Contrast Borders) --- */
-QTableWidget {
-    background-color: #FFFFFF;
-    border: 1px solid #000000;       /* Black Border */
-    gridline-color: #000000;         /* Black Gridlines */
-    color: #374151;
-    selection-background-color: #EFF6FF;
-    selection-color: #1F2937;
-    alternate-background-color: #1E293B; 
-}
-QHeaderView::section {
-    background-color: #F3F4F6;
-    padding: 8px;
-    border: 1px solid #000000;       /* Black Border for Header */
-    font-weight: bold;
-    color: #1F2937;
-}
-/* Ensure cell item borders are visible */
-QTableWidget::item {
-    border-right: 1px solid #000000;
-    border-bottom: 1px solid #000000;
-}
-
-/* --- CARDS --- */
-QFrame#StatCard {
-    background-color: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 8px;
-}
-QLabel#StatTitle {
-    color: #6B7280;
-    font-size: 11px;
-    font-weight: bold;
-    text-transform: uppercase;
-}
-QLabel#StatValue {
-    font-size: 24px;
-    font-weight: bold;
-    color: #1F2937;
-}
-QLabel#StatSub {
-    color: #9CA3AF;
-    font-size: 11px;
-}
-
-/* --- MONTHLY TAB WIDGETS --- */
-QFrame#MonthSummaryBox {
-    background-color: #F8FAFC;
-    border: 1px solid #E2E8F0;
-    border-radius: 6px;
-}
-QLabel#MonthBigLabel {
-    font-size: 16px; 
-    font-weight: bold;
-    color: #1F2937;
-}
-QLabel#MoneyLabel {
-    font-family: 'Segoe UI', monospace;
-    font-weight: bold;
-}
-"""
 
 class DeductionRow(QWidget):
     def __init__(self, parent_window, db_id, name, amount, is_percent, is_pre_tax):
@@ -206,9 +24,7 @@ class DeductionRow(QWidget):
         self.db_id = db_id
         
         layout = QHBoxLayout()
-        # CHANGED: Added 10px margins on Left/Right to prevent touching container edges
         layout.setContentsMargins(10, 5, 10, 5) 
-        # CHANGED: Increased spacing between internal elements
         layout.setSpacing(10)
         
         self.name_input = QLineEdit(name)
@@ -285,9 +101,7 @@ class ExpenseRow(QWidget):
         self.db_id = db_id
         
         layout = QHBoxLayout()
-        # CHANGED: Added 10px margins on Left/Right to prevent touching container edges
         layout.setContentsMargins(10, 5, 10, 5) 
-        # CHANGED: Increased spacing between internal elements
         layout.setSpacing(10)
         
         self.name_input = QLineEdit(name)
@@ -339,15 +153,32 @@ class BudgetApp(QMainWindow):
         self.resize(1350, 900)
         self.conn = None
         self.pay_schedule = []
-        self.month_tabs_refs = [] # To store references to monthly tab widgets
+        self.month_tabs_refs = [] 
         
+        # Init Theme
+        self.current_theme = THEMES["Light"] # Default
+
         # Init DB and Logic
         self.init_db()
         self.calculate_pay_schedule()
         
         # Setup UI
         self.setup_ui()
+        
+        # Apply Default Theme
+        self.apply_theme("Light")
+        
         self.load_data()
+
+    def apply_theme(self, theme_name):
+        self.current_theme = THEMES[theme_name]
+        
+        # Apply CSS
+        app = QApplication.instance()
+        app.setStyleSheet(self.current_theme.stylesheet)
+        
+        # Re-render dynamic content (colors in tables, labels)
+        self.recalculate_budget()
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -372,6 +203,12 @@ class BudgetApp(QMainWindow):
         header_text_layout.addWidget(sub)
         header_text_layout.setAlignment(Qt.AlignVCenter)
 
+        # Theme Switcher
+        theme_combo = QComboBox()
+        theme_combo.addItems(list(THEMES.keys()))
+        theme_combo.setFixedWidth(100)
+        theme_combo.currentTextChanged.connect(self.apply_theme)
+
         copy_btn = QPushButton("Copy Data for Excel")
         copy_btn.setObjectName("CopyButton")
         copy_btn.setCursor(Qt.PointingHandCursor)
@@ -379,6 +216,7 @@ class BudgetApp(QMainWindow):
 
         header_layout.addLayout(header_text_layout)
         header_layout.addStretch()
+        header_layout.addWidget(theme_combo) # Add Theme Switcher
         header_layout.addWidget(copy_btn)
         
         main_layout.addWidget(header)
@@ -407,7 +245,7 @@ class BudgetApp(QMainWindow):
         
         self.deductions_area = QScrollArea()
         self.deductions_area.setWidgetResizable(True)
-        self.deductions_area.setFrameShape(QFrame.NoFrame)
+        # REMOVED setFrameShape to allow CSS borders
         self.deductions_container = QWidget()
         self.deductions_layout = QVBoxLayout(self.deductions_container)
         self.deductions_layout.setContentsMargins(0,0,0,0)
@@ -426,7 +264,7 @@ class BudgetApp(QMainWindow):
         
         self.expenses_area = QScrollArea()
         self.expenses_area.setWidgetResizable(True)
-        self.expenses_area.setFrameShape(QFrame.NoFrame)
+        # REMOVED setFrameShape to allow CSS borders
         self.expenses_container = QWidget()
         self.expenses_layout = QVBoxLayout(self.expenses_container)
         self.expenses_layout.setContentsMargins(0,0,0,0)
@@ -442,7 +280,6 @@ class BudgetApp(QMainWindow):
 
         # Total Exp Display
         self.total_exp_label = QLabel("Total Monthly: $0.00")
-        self.total_exp_label.setStyleSheet("color: #DC2626; font-weight: bold; margin-top: 10px;")
         self.total_exp_label.setAlignment(Qt.AlignRight)
         sidebar_layout.addWidget(self.total_exp_label)
 
@@ -478,8 +315,8 @@ class BudgetApp(QMainWindow):
         stats_container.setSpacing(20)
 
         self.card_gross = self.create_stat_card("EST. ANNUAL GROSS", "$0.00", "Based on M-F calculation")
-        self.card_net = self.create_stat_card("EST. ANNUAL NET", "$0.00", "After Taxes & Deductions", "#059669")
-        self.card_savings = self.create_stat_card("EST. ANNUAL SAVINGS", "$0.00", "Income - Expenses", "#2563EB")
+        self.card_net = self.create_stat_card("EST. ANNUAL NET", "$0.00", "After Taxes & Deductions")
+        self.card_savings = self.create_stat_card("EST. ANNUAL SAVINGS", "$0.00", "Income - Expenses")
         
         stats_container.addWidget(self.card_gross, 0, 0)
         stats_container.addWidget(self.card_net, 0, 1)
@@ -513,7 +350,9 @@ class BudgetApp(QMainWindow):
         left_layout = QVBoxLayout(left_col)
         left_layout.setContentsMargins(0,0,0,0)
         
-        left_layout.addWidget(QLabel(f"{self.month_names[month_index]} Paychecks", objectName="HeaderTitle", styleSheet="color:#374151; font-size: 16px;"))
+        self.header_month = QLabel(f"{self.month_names[month_index]} Paychecks", objectName="HeaderTitle")
+        self.header_month.setStyleSheet("font-size: 16px; color: " + self.current_theme.palette['text_primary'])
+        left_layout.addWidget(self.header_month)
         
         # Monthly Income Table
         inc_table = QTableWidget()
@@ -531,9 +370,9 @@ class BudgetApp(QMainWindow):
         sum_layout = QGridLayout(summary_frame)
         sum_layout.setVerticalSpacing(15) 
         
-        lbl_inc_val = QLabel("$0.00", objectName="MoneyLabel", styleSheet="color: #059669; font-size: 18px;")
-        lbl_exp_val = QLabel("$0.00", objectName="MoneyLabel", styleSheet="color: #DC2626; font-size: 18px;")
-        lbl_rem_val = QLabel("$0.00", objectName="MoneyLabel", styleSheet="color: #2563EB; font-size: 22px;")
+        lbl_inc_val = QLabel("$0.00", objectName="MoneyLabel")
+        lbl_exp_val = QLabel("$0.00", objectName="MoneyLabel")
+        lbl_rem_val = QLabel("$0.00", objectName="MoneyLabel")
         
         sum_layout.addWidget(QLabel("Total Income:"), 0, 0)
         sum_layout.addWidget(lbl_inc_val, 0, 1, alignment=Qt.AlignRight)
@@ -546,7 +385,9 @@ class BudgetApp(QMainWindow):
         line.setStyleSheet("color: #CBD5E1;")
         sum_layout.addWidget(line, 2, 0, 1, 2)
         
-        sum_layout.addWidget(QLabel("Net Remaining:", styleSheet="font-weight:bold; font-size:16px;"), 3, 0)
+        lbl_rem_title = QLabel("Net Remaining:")
+        lbl_rem_title.setStyleSheet("font-weight:bold; font-size:16px;")
+        sum_layout.addWidget(lbl_rem_title, 3, 0)
         sum_layout.addWidget(lbl_rem_val, 3, 1, alignment=Qt.AlignRight)
 
         left_layout.addWidget(summary_frame)
@@ -557,19 +398,21 @@ class BudgetApp(QMainWindow):
         right_layout = QVBoxLayout(right_col)
         right_layout.setContentsMargins(0,0,0,0)
         
-        right_layout.addWidget(QLabel("Expense Breakdown", objectName="HeaderTitle", styleSheet="color:#374151; font-size: 16px;"))
+        self.header_exp = QLabel("Expense Breakdown", objectName="HeaderTitle")
+        self.header_exp.setStyleSheet("font-size: 16px; color: " + self.current_theme.palette['text_primary'])
+        right_layout.addWidget(self.header_exp)
         
         exp_scroll = QScrollArea()
+        exp_scroll.setObjectName("ExpenseBreakdownBox")  # ADDED for border styling
         exp_scroll.setWidgetResizable(True)
-        exp_scroll.setFrameShape(QFrame.NoFrame)
+        exp_scroll.setFrameShape(QFrame.NoFrame) # Let CSS handle border
         exp_container = QWidget()
-        exp_container.setStyleSheet("background-color: #FFFFFF;")
+        exp_container.setAttribute(Qt.WA_StyledBackground, True) 
         
-        # CHANGED: Use QGridLayout to guarantee 2-column alignment (Label | Value)
-        # This fixes the "Value on Left" issue by forcing values into Column 1 (Right)
         exp_list_layout = QGridLayout(exp_container)
         exp_list_layout.setAlignment(Qt.AlignTop)
         exp_list_layout.setSpacing(12)
+        exp_list_layout.setContentsMargins(15, 15, 15, 15) # Add inner padding so text doesn't hit border
         exp_list_layout.setColumnStretch(0, 1) # Name takes all space
         exp_list_layout.setColumnStretch(1, 0) # Value takes min space
         
@@ -588,11 +431,14 @@ class BudgetApp(QMainWindow):
             'inc_lbl': lbl_inc_val,
             'exp_lbl': lbl_exp_val,
             'rem_lbl': lbl_rem_val,
+            'rem_title_lbl': lbl_rem_title,
             'exp_layout': exp_list_layout,
-            'exp_container': exp_container
+            'exp_container': exp_container,
+            'header_month': self.header_month,
+            'header_exp': self.header_exp
         })
 
-    def create_stat_card(self, title, value, sub, color="#1F2937"):
+    def create_stat_card(self, title, value, sub):
         frame = QFrame()
         frame.setObjectName("StatCard")
         layout = QVBoxLayout(frame)
@@ -600,7 +446,6 @@ class BudgetApp(QMainWindow):
         l_title.setObjectName("StatTitle")
         l_val = QLabel(value)
         l_val.setObjectName("StatValue")
-        l_val.setStyleSheet(f"color: {color};")
         l_sub = QLabel(sub)
         l_sub.setObjectName("StatSub")
         layout.addWidget(l_title)
@@ -613,7 +458,7 @@ class BudgetApp(QMainWindow):
             if child.objectName() == "StatValue": return child
         return None
 
-    # --- Database Logic (Unchanged) ---
+    # --- Database Logic ---
     def init_db(self):
         self.conn = sqlite3.connect(DB_FILE)
         cursor = self.conn.cursor()
@@ -733,6 +578,9 @@ class BudgetApp(QMainWindow):
             self.pay_schedule.append({'date': pay_date, 'period': f"{p_start.strftime('%b %d')} - {p_end.strftime('%b %d')}", 'hours': hours, 'rate': 45.78})
 
     def recalculate_budget(self):
+        # Access current theme palette
+        pal = self.current_theme.palette
+
         # 1. Gather Data
         expenses_data = [self.expenses_layout.itemAt(i).widget().get_values() 
                          for i in range(self.expenses_layout.count())]
@@ -745,6 +593,7 @@ class BudgetApp(QMainWindow):
         except ValueError: tax_rate = 0.0
 
         self.total_exp_label.setText(f"Total Monthly: ${total_monthly_expenses:,.2f}")
+        self.total_exp_label.setStyleSheet(f"color: {pal['danger']}; font-weight: bold; margin-top: 10px;")
 
         # 2. Year Overview Logic
         total_gross = 0
@@ -760,8 +609,15 @@ class BudgetApp(QMainWindow):
             pre_tax_ded = 0
             post_tax_ded = 0
             
+            # TRACKING DEDUCTIONS FOR BREAKDOWN
+            current_check_deductions = {} 
+
             for d in deductions_data:
                 amt = (gross * d['value'] / 100.0) if d['is_percent'] else d['value']
+                
+                # Save amount for breakdown
+                current_check_deductions[d['name']] = amt
+                
                 if d['is_pre_tax']: pre_tax_ded += amt
                 else: post_tax_ded += amt
             
@@ -777,7 +633,8 @@ class BudgetApp(QMainWindow):
             row_idx = self.table.rowCount()
             self.table.insertRow(row_idx)
             is_alt = (row_idx % 2 != 0)
-            base_text_color = "#F1F5F9" if is_alt else "#374151"
+            
+            base_text_color = pal['text_alt_row'] if is_alt else pal['text_primary']
             
             self.set_table_item(row_idx, 0, check['date'].strftime('%b %d'), color=base_text_color)
             self.set_table_item(row_idx, 1, check['period'], color=base_text_color)
@@ -785,7 +642,7 @@ class BudgetApp(QMainWindow):
             item_hours = QTableWidgetItem(str(check['hours']))
             item_hours.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             if check['hours'] == 96:
-                item_hours.setForeground(QColor("#34D399" if is_alt else "#059669"))
+                item_hours.setForeground(QColor(pal['success_light'] if is_alt else pal['success']))
                 item_hours.setFont(QFont("Segoe UI", 9, QFont.Bold))
             else:
                 item_hours.setForeground(QColor(base_text_color))
@@ -793,42 +650,64 @@ class BudgetApp(QMainWindow):
             
             self.set_table_item(row_idx, 3, f"${check['rate']:.2f}", align_right=True, color=base_text_color)
             self.set_table_item(row_idx, 4, f"${gross:,.2f}", align_right=True, color=base_text_color)
-            net_color = "#34D399" if is_alt else "#059669"
+            
+            net_color = pal['success_light'] if is_alt else pal['success']
             self.set_table_item(row_idx, 5, f"${net:,.2f}", align_right=True, color=net_color)
             
             item_rem = QTableWidgetItem(f"${remaining:,.2f}")
             item_rem.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            rem_color = ("#60A5FA" if is_alt else "#2563EB") if remaining > 0 else ("#F87171" if is_alt else "#DC2626")
+            
+            if remaining > 0:
+                rem_color = pal['info_light'] if is_alt else pal['info']
+            else:
+                rem_color = pal['danger_light'] if is_alt else pal['danger']
+                
             item_rem.setForeground(QColor(rem_color))
             item_rem.setFont(QFont("Segoe UI", 9, QFont.Bold))
             self.table.setItem(row_idx, 6, item_rem)
 
-            # Store for Monthly Tabs (Month is 1-based in date, 0-based in list)
+            # Store for Monthly Tabs
             m_idx = check['date'].month - 1
             checks_by_month[m_idx].append({
                 'date': check['date'],
                 'gross': gross,
                 'net': net,
                 'deductions': pre_tax_ded + taxes + post_tax_ded, # Total withheld
-                'check_ded_breakdown': (pre_tax_ded + post_tax_ded) # Just the user deductions, not tax
+                'check_ded_breakdown': current_check_deductions # DICT of deductions
             })
 
-        # Update Year Cards
+        # Update Year Cards (using palette colors)
         self.get_stat_label(self.card_gross).setText(f"${total_gross:,.2f}")
+        self.get_stat_label(self.card_gross).setStyleSheet(f"color: {pal['chart_gross']};")
+        
         self.get_stat_label(self.card_net).setText(f"${total_net:,.2f}")
+        self.get_stat_label(self.card_net).setStyleSheet(f"color: {pal['success']};")
+        
         annual_savings = total_net - (total_monthly_expenses * 12)
         self.get_stat_label(self.card_savings).setText(f"${annual_savings:,.2f}")
+        self.get_stat_label(self.card_savings).setStyleSheet(f"color: {pal['info']};")
 
         # 3. Monthly Tabs Logic
         for m_idx in range(12):
             refs = self.month_tabs_refs[m_idx]
             checks = checks_by_month[m_idx]
             
+            # Update Headers manually
+            refs['header_month'].setStyleSheet("font-size: 16px; color: " + pal['text_primary'])
+            refs['header_exp'].setStyleSheet("font-size: 16px; color: " + pal['text_primary'])
+            
             # Sums
             m_gross = sum(c['gross'] for c in checks)
             m_net = sum(c['net'] for c in checks)
             m_deductions = sum(c['deductions'] for c in checks) # Includes Tax
-            m_user_deductions = sum(c['check_ded_breakdown'] for c in checks) # Just user defined
+
+            # Calculate Monthly Breakdown of Benefit Deductions
+            monthly_benefit_breakdown = {}
+            total_benefit_deductions = 0
+            for c in checks:
+                for d_name, d_amt in c['check_ded_breakdown'].items():
+                    monthly_benefit_breakdown[d_name] = monthly_benefit_breakdown.get(d_name, 0) + d_amt
+                    total_benefit_deductions += d_amt
             
             total_net_income = m_net
             total_outflow = total_monthly_expenses
@@ -836,10 +715,16 @@ class BudgetApp(QMainWindow):
             
             # Update Summary Labels
             refs['inc_lbl'].setText(f"${total_net_income:,.2f}")
+            refs['inc_lbl'].setStyleSheet(f"color: {pal['success']}; font-size: 18px;")
+            
             refs['exp_lbl'].setText(f"${total_outflow:,.2f}")
+            refs['exp_lbl'].setStyleSheet(f"color: {pal['danger']}; font-size: 18px;")
+            
             refs['rem_lbl'].setText(f"${net_remaining:,.2f}")
-            color = "#2563EB" if net_remaining > 0 else "#DC2626"
+            color = pal['info'] if net_remaining > 0 else pal['danger']
             refs['rem_lbl'].setStyleSheet(f"color: {color}; font-size: 22px;")
+            
+            refs['rem_title_lbl'].setStyleSheet("font-weight:bold; font-size:16px; color: " + pal['text_primary'])
 
             # Update Income Table
             t = refs['table']
@@ -850,7 +735,7 @@ class BudgetApp(QMainWindow):
                 
                 # Logic for colors (Same as main table)
                 is_alt = (row % 2 != 0)
-                base_color = "#F1F5F9" if is_alt else "#374151"
+                base_color = pal['text_alt_row'] if is_alt else pal['text_primary']
                 
                 # Date
                 item_date = QTableWidgetItem(c['date'].strftime('%b %d'))
@@ -866,7 +751,7 @@ class BudgetApp(QMainWindow):
                 # Net
                 item_net = QTableWidgetItem(f"${c['net']:,.2f}")
                 item_net.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                net_color = "#34D399" if is_alt else "#059669"
+                net_color = pal['success_light'] if is_alt else pal['success']
                 item_net.setForeground(QColor(net_color))
                 item_net.setFont(QFont("Segoe UI", 9, QFont.Bold))
                 t.setItem(row, 2, item_net)
@@ -881,11 +766,10 @@ class BudgetApp(QMainWindow):
             # Add Fixed Expenses
             row_idx = 0
             for exp in expenses_data:
-                self.add_line_to_grid(layout, row_idx, exp['name'], exp['amount'])
+                self.add_line_to_grid(layout, row_idx, exp['name'], exp['amount'], color=pal['text_primary'])
                 row_idx += 1
 
-            # Add Divider (Spanning 2 cols)
-            # Since QGridLayout handles widgets, we need a widget that spans
+            # Add Divider
             line = QFrame()
             line.setFrameShape(QFrame.HLine)
             line.setStyleSheet("color: #E2E8F0;")
@@ -896,18 +780,27 @@ class BudgetApp(QMainWindow):
             layout.setRowMinimumHeight(row_idx, 30)
             row_idx += 1
 
-            # Add Payroll Deductions Summary Label (Spanning 2 cols)
+            # Add Payroll Deductions Summary Label
             lbl = QLabel("Payroll Deductions (Already subtracted from Net)")
-            lbl.setStyleSheet("color: #94A3B8; font-size: 11px; font-weight: bold;")
+            lbl.setStyleSheet(f"color: {pal['text_secondary']}; font-size: 11px; font-weight: bold;")
             layout.addWidget(lbl, row_idx, 0, 1, 2)
             row_idx += 1
             
-            self.add_line_to_grid(layout, row_idx, "Taxes & Withholding", m_deductions - m_user_deductions, color="#64748B")
+            # Taxes
+            self.add_line_to_grid(layout, row_idx, "Taxes & Withholding", m_deductions - total_benefit_deductions, color=pal['text_secondary'])
             row_idx += 1
-            self.add_line_to_grid(layout, row_idx, "Benefit Deductions", m_user_deductions, color="#64748B")
+            
+            # Individual Benefit Breakdowns
+            lbl_breakdown = QLabel("Benefit Breakdown")
+            lbl_breakdown.setStyleSheet(f"color: {pal['text_primary']}; font-weight: bold; margin-top: 5px;")
+            layout.addWidget(lbl_breakdown, row_idx, 0, 1, 2)
             row_idx += 1
+            
+            for d_name, d_amt in monthly_benefit_breakdown.items():
+                 self.add_line_to_grid(layout, row_idx, d_name, d_amt, color=pal['text_secondary'])
+                 row_idx += 1
 
-    def add_line_to_grid(self, layout, row, name, amount, color="#374151"):
+    def add_line_to_grid(self, layout, row, name, amount, color):
         lbl_name = QLabel(name)
         lbl_name.setStyleSheet(f"color: {color};")
         
@@ -923,11 +816,13 @@ class BudgetApp(QMainWindow):
         else: item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         if color:
             item.setForeground(QColor(color))
-            if color not in ["#374151", "#F1F5F9"]: item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            # Bold check logic relies on color name matching. 
+            # We can just check if it's the standard primary text. If not, bold it.
+            if color != self.current_theme.palette['text_primary'] and color != self.current_theme.palette['text_alt_row']:
+                item.setFont(QFont("Segoe UI", 9, QFont.Bold))
         self.table.setItem(row, col, item)
 
     def copy_to_clipboard(self):
-        # ... (Existing Logic) ...
         header = "Pay Date,Period,Hours,Rate,Gross,Net Pay,Est Half-Month Exp,Remaining\n"
         data = ""
         expenses_data = [self.expenses_layout.itemAt(i).widget().get_values() for i in range(self.expenses_layout.count())]
@@ -950,14 +845,9 @@ class BudgetApp(QMainWindow):
         QGuiApplication.clipboard().setText(header + data)
         QMessageBox.information(self, "Copied", "Budget data copied to clipboard!")
 
-    def get_stat_label(self, card):
-        for child in card.children():
-            if child.objectName() == "StatValue": return child
-        return None
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLE_SHEET)
+    # Style is now set in BudgetApp init via apply_theme
     window = BudgetApp()
     window.show()
     sys.exit(app.exec())
