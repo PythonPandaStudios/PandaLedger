@@ -1,4 +1,5 @@
 import sys
+import time
 import datetime
 from datetime import timedelta, date
 import calendar
@@ -8,9 +9,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QScrollArea, QFrame, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QComboBox, QMessageBox, QGridLayout,
-                               QTabWidget, QFormLayout) # FIXED: Added QFormLayout
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QGuiApplication
+                               QTabWidget, QFormLayout, QSplashScreen, QProgressBar)
+from PySide6.QtCore import Qt, QTimer, QRect
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPixmap, QPainter
 
 # Internal Imports
 from theme_manager import THEMES
@@ -136,7 +137,7 @@ class ExpenseRow(QWidget):
 class BudgetApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PandaLedger")
+        self.setWindowTitle("Panda Ledger")
         self.resize(1350, 900)
         self.conn = None
         self.pay_schedule = []
@@ -148,7 +149,10 @@ class BudgetApp(QMainWindow):
         self.load_settings()
         self.calculate_pay_dates()
         self.setup_ui()
-        self.apply_theme("Light")
+        
+        # Load theme from settings or default to Light
+        initial_theme = self.current_config.get("theme", "Light")
+        self.apply_theme(initial_theme)
         self.load_data()
 
     def init_db(self):
@@ -172,7 +176,8 @@ class BudgetApp(QMainWindow):
         if not self.current_config:
             self.current_config = {
                 "schedule": "Semi-Monthly", "income_type": "Hourly", "rate": 45.78,
-                "state": "Colorado", "state_rate": 4.4, "fed_rate": 12.0, "add_tax_rate": 0.45
+                "state": "Colorado", "state_rate": 4.4, "fed_rate": 12.0, "add_tax_rate": 0.45,
+                "theme": "Light"
             }
 
     def save_settings(self, config_dict):
@@ -188,63 +193,38 @@ class BudgetApp(QMainWindow):
         sched = config.get('schedule', "Semi-Monthly")
 
         def get_work_hours(start_dt, end_dt):
-            """Counts Mon-Fri between dates and multiplies by 8 hours."""
             work_days = 0
             curr = start_dt
             while curr <= end_dt:
-                if curr.weekday() < 5: # 0-4 is Mon-Fri
+                if curr.weekday() < 5:
                     work_days += 1
                 curr += timedelta(days=1)
             return work_days * 8
         
-        # Hours logic (assumes 2080 annual hours divided by periods)
         if sched == "Weekly":
-            # Every Friday of the year
             d = date(CURRENT_YEAR, 1, 1)
-            while d.weekday() != 4: d += timedelta(days=1) # Find first Friday
+            while d.weekday() != 4: d += timedelta(days=1) 
             while d.year == CURRENT_YEAR:
                 self.pay_schedule.append({'date': d, 'hours': 40, 'rate': rate})
                 d += timedelta(weeks=1)
-
         elif sched == "Bi-Weekly":
             start_str = config.get('bw_start', f"{CURRENT_YEAR}-01-02")
             d = date.fromisoformat(start_str)
             while d.year == CURRENT_YEAR:
                 self.pay_schedule.append({'date': d, 'hours': 80, 'rate': rate})
                 d += timedelta(weeks=2)
-
         elif sched == "Semi-Monthly":
             for m in range(1, 13):
-                # --- Period 1: 1st to the 15th (Paid on the 22nd) ---
                 p1_start = date(CURRENT_YEAR, m, 1)
                 p1_end = date(CURRENT_YEAR, m, 15)
                 p1_pay_date = date(CURRENT_YEAR, m, 22)
-                
-                self.pay_schedule.append({
-                    'date': p1_pay_date, 
-                    'hours': get_work_hours(p1_start, p1_end), 
-                    'rate': rate
-                })
-
-                # --- Period 2: 16th to Last Day (Paid on the 7th of Next Month) ---
+                self.pay_schedule.append({'date': p1_pay_date, 'hours': get_work_hours(p1_start, p1_end), 'rate': rate})
                 last_day = calendar.monthrange(CURRENT_YEAR, m)[1]
                 p2_start = date(CURRENT_YEAR, m, 16)
                 p2_end = date(CURRENT_YEAR, m, last_day)
-                
-                # Handle year-overflow for January 7th of the next year
-                pay_year = CURRENT_YEAR
-                pay_month = m + 1
-                if pay_month > 12:
-                    pay_month = 1
-                    pay_year += 1
-                
+                pay_year, pay_month = (CURRENT_YEAR, m + 1) if m < 12 else (CURRENT_YEAR + 1, 1)
                 p2_pay_date = date(pay_year, pay_month, 7)
-                
-                self.pay_schedule.append({
-                    'date': p2_pay_date, 
-                    'hours': get_work_hours(p2_start, p2_end), 
-                    'rate': rate
-                })
+                self.pay_schedule.append({'date': p2_pay_date, 'hours': get_work_hours(p2_start, p2_end), 'rate': rate})
         elif sched == "Monthly":
             m_day = int(config.get('m_day', 1))
             for m in range(1, 13):
@@ -252,6 +232,8 @@ class BudgetApp(QMainWindow):
 
     def apply_theme(self, theme_name):
         self.current_theme = THEMES[theme_name]
+        self.current_config["theme"] = theme_name
+        self.save_settings({"theme": theme_name})
         QApplication.instance().setStyleSheet(self.current_theme.stylesheet)
         self.recalculate_budget()
 
@@ -278,9 +260,10 @@ class BudgetApp(QMainWindow):
         self.subtitle = QLabel("", objectName="HeaderSubtitle")
         title_box.addWidget(self.subtitle)
         
-        theme_combo = QComboBox()
-        theme_combo.addItems(list(THEMES.keys()))
-        theme_combo.currentTextChanged.connect(self.apply_theme)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(list(THEMES.keys()))
+        self.theme_combo.setCurrentText(self.current_config.get("theme", "Light"))
+        self.theme_combo.currentTextChanged.connect(self.apply_theme)
 
         payroll_btn = QPushButton("Payroll Settings")
         payroll_btn.setObjectName("AddButton")
@@ -292,7 +275,7 @@ class BudgetApp(QMainWindow):
         h_layout.addLayout(title_box)
         h_layout.addStretch()
         h_layout.addWidget(QLabel("Theme:"))
-        h_layout.addWidget(theme_combo)
+        h_layout.addWidget(self.theme_combo)
         h_layout.addWidget(payroll_btn)
         h_layout.addWidget(copy_btn)
         main_layout.addWidget(header)
@@ -362,25 +345,20 @@ class BudgetApp(QMainWindow):
     def setup_month_tab(self, m_idx):
         tab = QWidget()
         layout = QHBoxLayout(tab)
-        
         left = QVBoxLayout()
         table = QTableWidget(0, 3)
         table.setHorizontalHeaderLabels(["Date", "Gross", "Net"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.setFixedHeight(200)
         left.addWidget(table)
-        
         summary = QFrame(objectName="MonthSummaryBox")
         s_grid = QFormLayout(summary)
-        l_inc = QLabel("$0.00")
-        l_exp = QLabel("$0.00")
-        l_rem = QLabel("$0.00")
+        l_inc, l_exp, l_rem = QLabel("$0.00"), QLabel("$0.00"), QLabel("$0.00")
         s_grid.addRow("Net Income:", l_inc)
         s_grid.addRow("Expenses:", l_exp)
         s_grid.addRow("Remaining:", l_rem)
         left.addWidget(summary)
         left.addStretch()
-        
         right = QVBoxLayout()
         scroll = QScrollArea(objectName="ExpenseBreakdownBox", widgetResizable=True)
         cont = QWidget()
@@ -389,7 +367,6 @@ class BudgetApp(QMainWindow):
         scroll.setWidget(cont)
         right.addWidget(QLabel("Breakdown", objectName="HeaderTitle"))
         right.addWidget(scroll)
-
         layout.addLayout(left, 1)
         layout.addLayout(right, 1)
         self.tabs.addTab(tab, self.month_names[m_idx])
@@ -405,53 +382,31 @@ class BudgetApp(QMainWindow):
         return f
 
     def recalculate_budget(self):
-        """Uses the PayrollCalculator from models.py for all math."""
         self.subtitle.setText(f"{self.current_config['schedule']} | {self.current_config['state']} Tax Rules")
-        
-        # 1. Gather Expenses and Deductions
         expenses = [self.exp_layout.itemAt(i).widget().get_values() for i in range(self.exp_layout.count())]
         total_exp = sum(e['amount'] for e in expenses)
         self.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
-        
         deductions = [self.ded_layout.itemAt(i).widget().get_values() for i in range(self.ded_layout.count())]
-        
-        # 2. Reset Tables and Counters
         self.table.setRowCount(0)
-        total_gross = 0
-        total_net = 0
+        total_gross, total_net = 0, 0
         monthly_data = {i: [] for i in range(12)}
-
-        # 3. Process each paycheck
         for check in self.pay_schedule:
             gross = check['hours'] * check['rate']
-            
-            # Calculate individual deduction amounts for this specific check
             check_deductions_detail = []
-            pre_tax_total = 0
-            post_tax_total = 0
-
+            pre_tax_total, post_tax_total = 0, 0
             for d in deductions:
                 amt = d['value'] if not d['is_percent'] else gross * (d['value'] / 100)
                 check_deductions_detail.append({'name': d['name'], 'amount': amt})
-                if d['is_pre_tax']:
-                    pre_tax_total += amt
-                else:
-                    post_tax_total += amt
-            
+                if d['is_pre_tax']: pre_tax_total += amt
+                else: post_tax_total += amt
             taxable = max(0, gross - pre_tax_total)
-            
-            # Calculate Taxes via models.py
             taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config['fed_rate'], 
                                                    self.current_config['state_rate'], 
                                                    self.current_config['add_tax_rate'])
-            
             net = gross - pre_tax_total - taxes.total_tax - post_tax_total
             rem = net - (total_exp / 2) 
-            
             total_gross += gross
             total_net += net
-            
-            # Add to Year Overview Table
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(check['date'].strftime("%b %d")))
@@ -460,29 +415,17 @@ class BudgetApp(QMainWindow):
             self.table.setItem(row, 3, QTableWidgetItem(f"${gross:,.2f}"))
             self.table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
             self.table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
-            
-            monthly_data[check['date'].month-1].append({
-                'date': check['date'], 
-                'gross': gross, 
-                'net': net,
-                'taxes': taxes,
-                'deductions_list': check_deductions_detail
-            })
+            monthly_data[check['date'].month-1].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_deductions_detail})
 
-        # 4. Update Header Cards
         for child in self.card_gross.findChildren(QLabel):
             if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
         for child in self.card_net.findChildren(QLabel):
             if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
-        
         annual_exp = total_exp * 12
         for child in self.card_savings.findChildren(QLabel):
              if child.objectName() == "StatValue": child.setText(f"${total_net - annual_exp:,.2f}")
-
-        # 5. Update Month Tabs & Detailed Paystub Breakdown
         for m_idx, ref in enumerate(self.month_tabs_refs):
             checks = monthly_data[m_idx]
-            
             ref['table'].setRowCount(0)
             m_net = sum(c['net'] for c in checks)
             for c in checks:
@@ -491,78 +434,39 @@ class BudgetApp(QMainWindow):
                 ref['table'].setItem(r, 0, QTableWidgetItem(c['date'].strftime("%b %d")))
                 ref['table'].setItem(r, 1, QTableWidgetItem(f"${c['gross']:,.2f}"))
                 ref['table'].setItem(r, 2, QTableWidgetItem(f"${c['net']:,.2f}"))
-            
             ref['inc'].setText(f"${m_net:,.2f}")
             ref['exp'].setText(f"${total_exp:,.2f}")
             ref['rem'].setText(f"${m_net - total_exp:,.2f}")
-
             grid = ref['grid']
             while grid.count():
                 item = grid.takeAt(0)
                 if item.widget(): item.widget().deleteLater()
-            
             row = 0
-            # New Paycheck-by-Paycheck Detail Section
             for check_data in checks:
                 check_title = QLabel(f"Paycheck: {check_data['date'].strftime('%b %d, %Y')}")
                 check_title.setStyleSheet("font-weight: bold; color: #3B82F6; font-size: 15px; margin-top: 10px;")
                 grid.addWidget(check_title, row, 0, 1, 2)
                 row += 1
-
-                # Gross for this check
                 grid.addWidget(QLabel("Gross Pay"), row, 0)
                 val_gross = QLabel(f"${check_data['gross']:,.2f}")
                 val_gross.setAlignment(Qt.AlignRight)
                 grid.addWidget(val_gross, row, 1)
                 row += 1
-
-                # Tax Breakdown
                 tax = check_data['taxes']
-                tax_items = [
-                    ("Federal Income Tax", tax.fed_tax),
-                    ("State Income Tax", tax.state_tax),
-                    ("Social Security", tax.ss_tax),
-                    ("Medicare", tax.medicare_tax),
-                    ("Other Tax (CO FAMLI, etc)", tax.additional_tax)
-                ]
-
+                tax_items = [("Federal Income Tax", tax.fed_tax), ("State Income Tax", tax.state_tax), ("Social Security", tax.ss_tax), ("Medicare", tax.medicare_tax), ("Other Tax (CO FAMLI, etc)", tax.additional_tax)]
                 for label, val in tax_items:
                     if val > 0:
-                        l = QLabel(f"  {label}")
-                        l.setStyleSheet("color: #6B7280; font-size: 12px;")
-                        grid.addWidget(l, row, 0)
-                        v = QLabel(f"-${val:,.2f}")
-                        v.setStyleSheet("color: #EF4444; font-size: 12px;")
-                        v.setAlignment(Qt.AlignRight)
-                        grid.addWidget(v, row, 1)
+                        l = QLabel(f"  {label}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row, 0)
+                        v = QLabel(f"-${val:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row, 1)
                         row += 1
-
-                # Individual Benefit Deductions
                 for ded in check_data['deductions_list']:
-                    l = QLabel(f"  {ded['name']}")
-                    l.setStyleSheet("color: #6B7280; font-size: 12px;")
-                    grid.addWidget(l, row, 0)
-                    v = QLabel(f"-${ded['amount']:,.2f}")
-                    v.setStyleSheet("color: #EF4444; font-size: 12px;")
-                    v.setAlignment(Qt.AlignRight)
-                    grid.addWidget(v, row, 1)
+                    l = QLabel(f"  {ded['name']}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row, 0)
+                    v = QLabel(f"-${ded['amount']:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row, 1)
                     row += 1
-                
-                # Net for this check
-                net_label = QLabel("Check Net Total")
-                net_label.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB; margin-top: 5px;")
-                grid.addWidget(net_label, row, 0)
-                val_net = QLabel(f"${check_data['net']:,.2f}")
-                val_net.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB; margin-top: 5px;")
-                val_net.setAlignment(Qt.AlignRight)
-                grid.addWidget(val_net, row, 1)
+                net_label = QLabel("Check Net Total"); net_label.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB; margin-top: 5px;"); grid.addWidget(net_label, row, 0)
+                val_net = QLabel(f"${check_data['net']:,.2f}"); val_net.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB; margin-top: 5px;"); val_net.setAlignment(Qt.AlignRight); grid.addWidget(val_net, row, 1)
                 row += 1
-
-                # Separator spacer
-                spacer = QLabel("")
-                spacer.setFixedHeight(15)
-                grid.addWidget(spacer, row, 0)
-                row += 1
+                spacer = QLabel(""); spacer.setFixedHeight(15); grid.addWidget(spacer, row, 0); row += 1
 
     def load_data(self):
         cursor = self.conn.cursor()
@@ -575,8 +479,7 @@ class BudgetApp(QMainWindow):
     def add_deduction_row(self, db_id=None, name="New", amount=0, is_pct=False, is_pre=True, save=True):
         if save:
             cursor = self.conn.cursor()
-            cursor.execute("INSERT INTO deductions (year, name, amount, is_percent, is_pre_tax) VALUES (?,?,?,?,?)",
-                           (CURRENT_YEAR, name, amount, int(is_pct), int(is_pre)))
+            cursor.execute("INSERT INTO deductions (year, name, amount, is_percent, is_pre_tax) VALUES (?,?,?,?,?)", (CURRENT_YEAR, name, amount, int(is_pct), int(is_pre)))
             self.conn.commit()
             db_id = cursor.lastrowid
         self.ded_layout.addWidget(DeductionRow(self, db_id, name, amount, is_pct, is_pre))
@@ -590,8 +493,7 @@ class BudgetApp(QMainWindow):
         self.exp_layout.addWidget(ExpenseRow(self, db_id, name, amount))
 
     def db_update_deduction(self, db_id, name, amt, is_pct, is_pre):
-        self.conn.cursor().execute("UPDATE deductions SET name=?, amount=?, is_percent=?, is_pre_tax=? WHERE id=?",
-                                   (name, amt, int(is_pct), int(is_pre), db_id))
+        self.conn.cursor().execute("UPDATE deductions SET name=?, amount=?, is_percent=?, is_pre_tax=? WHERE id=?", (name, amt, int(is_pct), int(is_pre), db_id))
         self.conn.commit()
 
     def db_delete_deduction(self, db_id):
@@ -610,8 +512,48 @@ class BudgetApp(QMainWindow):
         QGuiApplication.clipboard().setText("Budget data copied")
         QMessageBox.information(self, "Copied", "Data copied to clipboard.")
 
+def show_splash():
+    # Create a simple high-res pixmap for the splash
+    pixmap = QPixmap(500, 300)
+    pixmap.fill(QColor("#1F2937"))
+    
+    painter = QPainter(pixmap)
+    painter.setPen(QColor("#FFFFFF"))
+    painter.setFont(QFont("Arial", 28, QFont.Bold))
+    painter.drawText(QRect(0, 50, 500, 50), Qt.AlignCenter, "Panda Ledger")
+    painter.setFont(QFont("Arial", 12))
+    painter.drawText(QRect(0, 100, 500, 30), Qt.AlignCenter, "Python Panda Studios Personal Accounting Software")
+    painter.end()
+
+    splash = QSplashScreen(pixmap, Qt.WindowStaysOnTopHint)
+    
+    # Add a progress bar to the splash screen
+    progress_bar = QProgressBar(splash)
+    progress_bar.setGeometry(50, 220, 400, 20)
+    progress_bar.setStyleSheet("""
+        QProgressBar { border: 1px solid #374151; border-radius: 5px; text-align: center; color: white; }
+        QProgressBar::chunk { background-color: #3B82F6; }
+    """)
+    
+    splash.show()
+    
+    # Simulate loading process
+    steps = ["Initializing Database...", "Loading Configuration...", "Applying Themes...", "Ready!"]
+    for i, step in enumerate(steps):
+        splash.showMessage(f"  {step}", Qt.AlignBottom | Qt.AlignLeft, Qt.white)
+        progress_bar.setValue((i + 1) * 25)
+        QApplication.processEvents()
+        time.sleep(0.5)
+    
+    return splash
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    
+    splash = show_splash()
+    
     window = BudgetApp()
+    splash.finish(window)
     window.show()
+    
     sys.exit(app.exec())
