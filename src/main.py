@@ -17,6 +17,12 @@ from theme_manager import THEMES
 DB_FILE = "budget_data.db"
 CURRENT_YEAR = 2026
 
+# Tax Rates (2025/2026 Estimates)
+RATE_SS = 0.062        # Social Security (6.2%)
+RATE_MEDICARE = 0.0145 # Medicare (1.45%)
+RATE_CO_STATE = 0.044  # Colorado State Income Tax (4.4% Flat)
+RATE_CO_FAMLI = 0.0045 # CO FAMLI (0.45%)
+
 class DeductionRow(QWidget):
     def __init__(self, parent_window, db_id, name, amount, is_percent, is_pre_tax):
         super().__init__()
@@ -234,9 +240,9 @@ class BudgetApp(QMainWindow):
         sidebar_layout.setSpacing(20) 
         
         # Tax Rate
-        sidebar_layout.addWidget(QLabel("ESTIMATED TAX RATE (%)", objectName="SectionTitle"))
+        sidebar_layout.addWidget(QLabel("FEDERAL TAX RATE (%)", objectName="SectionTitle"))
         self.tax_input = QLineEdit()
-        self.tax_input.setPlaceholderText("22.0")
+        self.tax_input.setPlaceholderText("12.0")
         self.tax_input.textChanged.connect(self.update_tax_db)
         sidebar_layout.addWidget(self.tax_input)
 
@@ -477,8 +483,8 @@ class BudgetApp(QMainWindow):
         if row: 
             self.tax_input.setText(str(row[0]))
         else:
-            self.tax_input.setText("22.0")
-            cursor.execute("INSERT INTO settings (year, tax_rate) VALUES (?, ?)", (CURRENT_YEAR, 22.0))
+            self.tax_input.setText("12.0") # Default to realistic Fed Rate
+            cursor.execute("INSERT INTO settings (year, tax_rate) VALUES (?, ?)", (CURRENT_YEAR, 12.0))
             self.conn.commit()
             
         # Load Deductions
@@ -589,8 +595,8 @@ class BudgetApp(QMainWindow):
         deductions_data = [self.deductions_layout.itemAt(i).widget().get_values() 
                            for i in range(self.deductions_layout.count())]
         
-        try: tax_rate = float(self.tax_input.text())
-        except ValueError: tax_rate = 0.0
+        try: fed_rate = float(self.tax_input.text())
+        except ValueError: fed_rate = 0.0
 
         self.total_exp_label.setText(f"Total Monthly: ${total_monthly_expenses:,.2f}")
         self.total_exp_label.setStyleSheet(f"color: {pal['danger']}; font-weight: bold; margin-top: 10px;")
@@ -621,13 +627,39 @@ class BudgetApp(QMainWindow):
                 if d['is_pre_tax']: pre_tax_ded += amt
                 else: post_tax_ded += amt
             
-            taxable = max(0, gross - pre_tax_ded)
-            taxes = taxable * (tax_rate / 100.0)
-            net = gross - pre_tax_ded - taxes - post_tax_ded
+            # --- TAX CALCULATION (Separated) ---
+            # 1. Income Tax Basis (Federal & State)
+            # Typically: Gross - PreTax Deductions (401k, Medical, etc)
+            taxable_income = max(0, gross - pre_tax_ded)
+            
+            tax_fed = taxable_income * (fed_rate / 100.0)
+            tax_state = taxable_income * RATE_CO_STATE
+
+            # 2. FICA Basis (Social Security, Medicare, FAMLI)
+            # Typically: Gross
+            fica_basis = gross 
+            
+            tax_ss = fica_basis * RATE_SS
+            tax_med = fica_basis * RATE_MEDICARE
+            tax_famli = fica_basis * RATE_CO_FAMLI
+            
+            total_taxes = tax_fed + tax_state + tax_ss + tax_med + tax_famli
+            
+            # Net Pay
+            net = gross - pre_tax_ded - total_taxes - post_tax_ded
             remaining = net - (total_monthly_expenses / 2)
             
             total_gross += gross
             total_net += net
+            
+            # Save breakdown for this check
+            tax_breakdown = {
+                'Federal Tax': tax_fed,
+                'State Tax (CO)': tax_state,
+                'Social Security': tax_ss,
+                'Medicare': tax_med,
+                'CO FAMLI': tax_famli
+            }
 
             # Add to Year Overview Table
             row_idx = self.table.rowCount()
@@ -672,8 +704,8 @@ class BudgetApp(QMainWindow):
                 'date': check['date'],
                 'gross': gross,
                 'net': net,
-                'deductions': pre_tax_ded + taxes + post_tax_ded, # Total withheld
-                'check_ded_breakdown': current_check_deductions # DICT of deductions
+                'check_ded_breakdown': current_check_deductions, # User Deductions
+                'check_tax_breakdown': tax_breakdown             # Tax Breakdown
             })
 
         # Update Year Cards (using palette colors)
@@ -699,16 +731,7 @@ class BudgetApp(QMainWindow):
             # Sums
             m_gross = sum(c['gross'] for c in checks)
             m_net = sum(c['net'] for c in checks)
-            m_deductions = sum(c['deductions'] for c in checks) # Includes Tax
 
-            # Calculate Monthly Breakdown of Benefit Deductions
-            monthly_benefit_breakdown = {}
-            total_benefit_deductions = 0
-            for c in checks:
-                for d_name, d_amt in c['check_ded_breakdown'].items():
-                    monthly_benefit_breakdown[d_name] = monthly_benefit_breakdown.get(d_name, 0) + d_amt
-                    total_benefit_deductions += d_amt
-            
             total_net_income = m_net
             total_outflow = total_monthly_expenses
             net_remaining = total_net_income - total_outflow
@@ -780,25 +803,54 @@ class BudgetApp(QMainWindow):
             layout.setRowMinimumHeight(row_idx, 30)
             row_idx += 1
 
-            # Add Payroll Deductions Summary Label
-            lbl = QLabel("Payroll Deductions (Already subtracted from Net)")
+            # Payroll Deductions Header
+            lbl = QLabel("Payroll Deductions (Per Check)")
             lbl.setStyleSheet(f"color: {pal['text_secondary']}; font-size: 11px; font-weight: bold;")
             layout.addWidget(lbl, row_idx, 0, 1, 2)
             row_idx += 1
-            
-            # Taxes
-            self.add_line_to_grid(layout, row_idx, "Taxes & Withholding", m_deductions - total_benefit_deductions, color=pal['text_secondary'])
-            row_idx += 1
-            
-            # Individual Benefit Breakdowns
-            lbl_breakdown = QLabel("Benefit Breakdown")
-            lbl_breakdown.setStyleSheet(f"color: {pal['text_primary']}; font-weight: bold; margin-top: 5px;")
-            layout.addWidget(lbl_breakdown, row_idx, 0, 1, 2)
-            row_idx += 1
-            
-            for d_name, d_amt in monthly_benefit_breakdown.items():
-                 self.add_line_to_grid(layout, row_idx, d_name, d_amt, color=pal['text_secondary'])
-                 row_idx += 1
+
+            for i, c in enumerate(checks):
+                # Check Header
+                check_date_str = c['date'].strftime('%b %d')
+                lbl_check = QLabel(f"Paycheck: {check_date_str}")
+                lbl_check.setStyleSheet(f"color: {pal['text_primary']}; font-weight: bold; margin-top: 10px; text-decoration: underline;")
+                layout.addWidget(lbl_check, row_idx, 0, 1, 2)
+                row_idx += 1
+
+                # Taxes
+                lbl_tax_sub = QLabel("Taxes")
+                lbl_tax_sub.setStyleSheet(f"color: {pal['text_secondary']}; font-size: 11px; font-style: italic;")
+                layout.addWidget(lbl_tax_sub, row_idx, 0, 1, 2)
+                row_idx += 1
+
+                tax_order = ['Federal Tax', 'State Tax (CO)', 'Social Security', 'Medicare', 'CO FAMLI']
+                for t_name in tax_order:
+                    val = c['check_tax_breakdown'].get(t_name, 0.0)
+                    self.add_line_to_grid(layout, row_idx, t_name, val, color=pal['text_secondary'])
+                    row_idx += 1
+
+                # Benefits
+                lbl_ben_sub = QLabel("Benefits")
+                lbl_ben_sub.setStyleSheet(f"color: {pal['text_secondary']}; font-size: 11px; font-style: italic; margin-top: 5px;")
+                layout.addWidget(lbl_ben_sub, row_idx, 0, 1, 2)
+                row_idx += 1
+                
+                deductions = c['check_ded_breakdown']
+                if not deductions:
+                    self.add_line_to_grid(layout, row_idx, "None", 0.0, color=pal['text_secondary'])
+                    row_idx += 1
+                else:
+                    for d_name, d_amt in deductions.items():
+                        self.add_line_to_grid(layout, row_idx, d_name, d_amt, color=pal['text_secondary'])
+                        row_idx += 1
+                
+                # Separator between checks
+                if i < len(checks) - 1:
+                     sep = QFrame()
+                     sep.setFrameShape(QFrame.HLine)
+                     sep.setStyleSheet("color: #E2E8F0; margin-top: 5px; margin-bottom: 5px;")
+                     layout.addWidget(sep, row_idx, 0, 1, 2)
+                     row_idx += 1
 
     def add_line_to_grid(self, layout, row, name, amount, color):
         lbl_name = QLabel(name)
@@ -838,8 +890,16 @@ class BudgetApp(QMainWindow):
                 if d['is_pre_tax']: pre += amt
                 else: post += amt
             taxable = max(0, gross - pre)
-            taxes = taxable * (tax_rate / 100.0)
-            net = gross - pre - taxes - post
+            
+            # Use same separated logic for clipboard
+            t_fed = taxable * (tax_rate / 100.0)
+            t_state = taxable * RATE_CO_STATE
+            t_ss = gross * RATE_SS
+            t_med = gross * RATE_MEDICARE
+            t_fam = gross * RATE_CO_FAMLI
+            total_tax = t_fed + t_state + t_ss + t_med + t_fam
+            
+            net = gross - pre - total_tax - post
             rem = net - (total_monthly / 2)
             data += f"{check['date']},{check['period']},{check['hours']},{check['rate']},{gross:.2f},{net:.2f},{(total_monthly/2):.2f},{rem:.2f}\n"
         QGuiApplication.clipboard().setText(header + data)
