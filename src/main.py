@@ -233,7 +233,7 @@ class BudgetApp(QMainWindow):
     def apply_theme(self, theme_name):
         self.current_theme = THEMES[theme_name]
         self.current_config["theme"] = theme_name
-        self.save_settings({"theme": theme_name}) # Save theme choice to DB
+        self.save_settings({"theme": theme_name}) 
         QApplication.instance().setStyleSheet(self.current_theme.stylesheet)
         self.recalculate_budget()
 
@@ -511,7 +511,7 @@ class BudgetApp(QMainWindow):
         QMessageBox.information(self, "Copied", "Data copied to clipboard.")
 
 def show_splash(theme_palette):
-    """Generates a theme-aware splash screen."""
+    """Generates a theme-aware splash screen with synced progress."""
     bg_color = QColor(theme_palette["bg_primary"])
     text_color = QColor(theme_palette["text_primary"])
     
@@ -531,7 +531,8 @@ def show_splash(theme_palette):
     # Theme-aware progress bar
     progress_bar = QProgressBar(splash)
     progress_bar.setGeometry(50, 220, 400, 20)
-    # Determine progress bar style based on theme lightness
+    progress_bar.setValue(0)  # Start at zero
+    
     is_dark = bg_color.lightness() < 128
     border_color = "#374151" if is_dark else "#D1D5DB"
     label_color = "white" if is_dark else "black"
@@ -541,11 +542,14 @@ def show_splash(theme_palette):
         QProgressBar::chunk {{ background-color: #3B82F6; }}
     """)
     
+    # Ensure splash is shown and rendered before starting logic
     splash.show()
+    QApplication.processEvents()
     
     steps = ["Initializing Database...", "Loading Configuration...", "Applying Themes...", "Ready!"]
     for i, step in enumerate(steps):
         splash.showMessage(f"  {step}", Qt.AlignBottom | Qt.AlignLeft, text_color)
+        # First step should start the progress after initialization begins
         progress_bar.setValue((i + 1) * 25)
         QApplication.processEvents()
         time.sleep(0.5)
@@ -555,7 +559,7 @@ def show_splash(theme_palette):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # Quick DB check to see which theme to use for the splash
+    # Quick DB check to determine theme for splash
     temp_conn = sqlite3.connect(DB_FILE)
     cursor = temp_conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
@@ -564,6 +568,7 @@ if __name__ == "__main__":
     saved_theme_name = row[0] if row else "Light"
     temp_conn.close()
     
+    # show_splash now ensures visual sync
     splash = show_splash(THEMES[saved_theme_name].palette)
     
     window = BudgetApp()
