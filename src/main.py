@@ -18,6 +18,10 @@ from theme_manager import THEMES
 from models import PayrollCalculator, TaxResult, PaycheckResult
 from payroll_settings_dialog import PayrollSettingsDialog
 
+from PySide6.QtGui import QIcon, QPainter, QPixmap, QFont, QColor
+from PySide6.QtCore import Qt, QRect
+import ctypes
+
 # Use this to find the directory of the actual executable or script
 if getattr(sys, 'frozen', False):
     APP_DIR = os.path.dirname(sys.executable)
@@ -468,6 +472,39 @@ def show_splash(theme_palette):
         QApplication.processEvents(); time.sleep(0.5)
     return splash
 
+def set_custom_icon(self):
+    # 1. Create a transparent Pixmap (256x256 is standard for high-res icons)
+    pixmap = QPixmap(256, 256)
+    pixmap.fill(Qt.transparent)
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    
+    # 2. Draw Background (Rounded Square)
+    # Using the primary brand color from your Light theme
+    painter.setBrush(QColor("#3B82F6")) 
+    painter.setPen(Qt.NoPen)
+    painter.drawRoundedRect(0, 0, 256, 256, 40, 40)
+    
+    # 3. Draw "PL" Text
+    painter.setPen(QColor("white"))
+    font_pl = QFont("Arial", 100, QFont.Bold)
+    painter.setFont(font_pl)
+    painter.drawText(QRect(0, 20, 256, 140), Qt.AlignCenter, "PL")
+    
+    # 4. Draw "PPS" Text
+    font_pps = QFont("Arial", 40, QFont.Bold)
+    painter.setFont(font_pps)
+    painter.drawText(QRect(0, 140, 256, 80), Qt.AlignCenter, "PPS")
+    
+    painter.end()
+    
+    # 5. Set the Icon
+    app_icon = QIcon(pixmap)
+    self.setWindowIcon(app_icon)
+    # Also set for the application instance to ensure taskbar update
+    QApplication.setWindowIcon(app_icon)
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
@@ -478,6 +515,11 @@ if __name__ == "__main__":
         cursor.execute("SELECT value FROM config WHERE key='theme'")
         row = cursor.fetchone()
         saved_theme = row[0] if row else "Light"
+
+    # FIX: Ensure the taskbar uses the custom window icon on Windows
+    if sys.platform == 'win32':
+        myappid = 'pythonpandastudios.pandaledger.1.0' # unique string
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     
     splash = show_splash(THEMES[saved_theme].palette)
     window = BudgetApp()
