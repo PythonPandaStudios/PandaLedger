@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import datetime
@@ -17,7 +18,13 @@ from theme_manager import THEMES
 from models import PayrollCalculator, TaxResult, PaycheckResult
 from payroll_settings_dialog import PayrollSettingsDialog
 
-DB_FILE = "budget_data.db"
+# Use this to find the directory of the actual executable or script
+if getattr(sys, 'frozen', False):
+    APP_DIR = os.path.dirname(sys.executable)
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_FILE = os.path.join(APP_DIR, "budget_data.db")
 
 class DeductionRow(QWidget):
     dataChanged = Signal()
