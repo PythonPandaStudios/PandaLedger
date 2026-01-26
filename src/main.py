@@ -350,36 +350,43 @@ class BudgetApp(QMainWindow):
         """Uses the PayrollCalculator from models.py for all math."""
         self.subtitle.setText(f"{self.current_config['schedule']} | {self.current_config['state']} Tax Rules")
         
+        # 1. Gather Expenses and Deductions
         expenses = [self.exp_layout.itemAt(i).widget().get_values() for i in range(self.exp_layout.count())]
         total_exp = sum(e['amount'] for e in expenses)
         self.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
         
         deductions = [self.ded_layout.itemAt(i).widget().get_values() for i in range(self.ded_layout.count())]
         
+        # 2. Reset Tables and Counters
         self.table.setRowCount(0)
         total_gross = 0
         total_net = 0
         monthly_data = {i: [] for i in range(12)}
 
+        # 3. Process each paycheck
         for check in self.pay_schedule:
             gross = check['hours'] * check['rate']
-            pre_tax = sum(d['value'] if not d['is_percent'] else gross * (d['value']/100) 
+            
+            # Calculate Pre/Post tax deductions (Sum of fixed amounts + percentages)
+            pre_tax_total = sum(d['value'] if not d['is_percent'] else gross * (d['value']/100) 
                           for d in deductions if d['is_pre_tax'])
-            post_tax = sum(d['value'] if not d['is_percent'] else gross * (d['value']/100) 
+            post_tax_total = sum(d['value'] if not d['is_percent'] else gross * (d['value']/100) 
                            for d in deductions if not d['is_pre_tax'])
             
-            taxable = max(0, gross - pre_tax)
-            # Logic called from models.py
+            taxable = max(0, gross - pre_tax_total)
+            
+            # Calculate Taxes
             taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config['fed_rate'], 
                                                    self.current_config['state_rate'], 
                                                    self.current_config['add_tax_rate'])
             
-            net = gross - pre_tax - taxes.total_tax - post_tax
-            rem = net - (total_exp / 2)
+            net = gross - pre_tax_total - taxes.total_tax - post_tax_total
+            rem = net - (total_exp / 2) # Roughly split expenses per check for the big table view
             
             total_gross += gross
             total_net += net
             
+            # Add to Year Overview Table
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(check['date'].strftime("%b %d")))
@@ -389,14 +396,31 @@ class BudgetApp(QMainWindow):
             self.table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
             self.table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
             
-            monthly_data[check['date'].month-1].append({'date': check['date'], 'gross': gross, 'net': net})
+            # Store detail data for the specific month
+            monthly_data[check['date'].month-1].append({
+                'date': check['date'], 
+                'gross': gross, 
+                'net': net,
+                'taxes': taxes,
+                'pre_tax_ded': pre_tax_total,
+                'post_tax_ded': post_tax_total
+            })
 
+        # 4. Update Header Cards
         for card, val in [(self.card_gross, total_gross), (self.card_net, total_net)]:
             for child in card.children():
                 if child.objectName() == "StatValue": child.setText(f"${val:,.2f}")
+        
+        # Savings is Net - Annualized Expenses
+        annual_exp = total_exp * 12
+        for child in self.card_savings.children():
+             if child.objectName() == "StatValue": child.setText(f"${total_net - annual_exp:,.2f}")
 
+        # 5. Update Month Tabs & Breakdown Panel
         for m_idx, ref in enumerate(self.month_tabs_refs):
             checks = monthly_data[m_idx]
+            
+            # A. Update Left Table
             ref['table'].setRowCount(0)
             m_net = sum(c['net'] for c in checks)
             for c in checks:
@@ -409,6 +433,61 @@ class BudgetApp(QMainWindow):
             ref['inc'].setText(f"${m_net:,.2f}")
             ref['exp'].setText(f"${total_exp:,.2f}")
             ref['rem'].setText(f"${m_net - total_exp:,.2f}")
+
+            # B. Populate Breakdown Grid (Right Side)
+            grid = ref['grid']
+            # Clear existing items
+            while grid.count():
+                child = grid.takeAt(0)
+                if child.widget(): child.widget().deleteLater()
+            
+            row = 0
+            
+            # Expenses Section
+            if expenses:
+                lbl = QLabel("Monthly Expenses")
+                lbl.setStyleSheet("font-weight: bold; color: #6B7280; margin-top: 10px;")
+                grid.addWidget(lbl, row, 0, 1, 2)
+                row += 1
+                
+                for exp in expenses:
+                    grid.addWidget(QLabel(exp['name']), row, 0)
+                    val_lbl = QLabel(f"${exp['amount']:,.2f}")
+                    val_lbl.setAlignment(Qt.AlignRight)
+                    grid.addWidget(val_lbl, row, 1)
+                    row += 1
+
+            # Payroll Deductions Section
+            # Sum up taxes and benefits for all checks in this month
+            m_taxes = sum(c['taxes'].total_tax for c in checks)
+            m_benefits = sum(c['pre_tax_ded'] + c['post_tax_ded'] for c in checks)
+            
+            if m_taxes > 0 or m_benefits > 0:
+                # Spacer
+                grid.addWidget(QLabel(""), row, 0) 
+                row += 1
+                
+                lbl = QLabel("Payroll Deductions")
+                lbl.setStyleSheet("font-weight: bold; color: #6B7280;")
+                grid.addWidget(lbl, row, 0, 1, 2)
+                row += 1
+                
+                sub_lbl = QLabel("(Already subtracted from Net)")
+                sub_lbl.setStyleSheet("font-size: 11px; color: #9CA3AF; margin-bottom: 5px;")
+                grid.addWidget(sub_lbl, row, 0, 1, 2)
+                row += 1
+
+                grid.addWidget(QLabel("Taxes & Withholding"), row, 0)
+                val_lbl = QLabel(f"${m_taxes:,.2f}")
+                val_lbl.setAlignment(Qt.AlignRight)
+                grid.addWidget(val_lbl, row, 1)
+                row += 1
+
+                grid.addWidget(QLabel("Benefit Deductions"), row, 0)
+                val_lbl = QLabel(f"${m_benefits:,.2f}")
+                val_lbl.setAlignment(Qt.AlignRight)
+                grid.addWidget(val_lbl, row, 1)
+                row += 1
 
     def load_data(self):
         cursor = self.conn.cursor()
