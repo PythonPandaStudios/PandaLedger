@@ -137,7 +137,7 @@ class ExpenseRow(QWidget):
 class BudgetApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Panda Ledger")
+        self.setWindowTitle("PandaLedger")
         self.resize(1350, 900)
         self.conn = None
         self.pay_schedule = []
@@ -150,7 +150,7 @@ class BudgetApp(QMainWindow):
         self.calculate_pay_dates()
         self.setup_ui()
         
-        # Load theme from settings or default to Light
+        # Apply the saved theme from the database
         initial_theme = self.current_config.get("theme", "Light")
         self.apply_theme(initial_theme)
         self.load_data()
@@ -233,7 +233,7 @@ class BudgetApp(QMainWindow):
     def apply_theme(self, theme_name):
         self.current_theme = THEMES[theme_name]
         self.current_config["theme"] = theme_name
-        self.save_settings({"theme": theme_name})
+        self.save_settings({"theme": theme_name}) # Save theme choice to DB
         QApplication.instance().setStyleSheet(self.current_theme.stylesheet)
         self.recalculate_budget()
 
@@ -325,7 +325,6 @@ class BudgetApp(QMainWindow):
     def setup_year_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
         stats = QGridLayout()
         self.card_gross = self.create_stat_card("EST. ANNUAL GROSS", "$0.00", "Annual Total")
         self.card_net = self.create_stat_card("EST. ANNUAL NET", "$0.00", "Take Home")
@@ -334,7 +333,6 @@ class BudgetApp(QMainWindow):
         stats.addWidget(self.card_net, 0, 1)
         stats.addWidget(self.card_savings, 0, 2)
         layout.addLayout(stats)
-
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["Date", "Hrs", "Rate", "Gross", "Net", "Remaining"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -512,35 +510,42 @@ class BudgetApp(QMainWindow):
         QGuiApplication.clipboard().setText("Budget data copied")
         QMessageBox.information(self, "Copied", "Data copied to clipboard.")
 
-def show_splash():
-    # Create a simple high-res pixmap for the splash
+def show_splash(theme_palette):
+    """Generates a theme-aware splash screen."""
+    bg_color = QColor(theme_palette["bg_primary"])
+    text_color = QColor(theme_palette["text_primary"])
+    
     pixmap = QPixmap(500, 300)
-    pixmap.fill(QColor("#1F2937"))
+    pixmap.fill(bg_color)
     
     painter = QPainter(pixmap)
-    painter.setPen(QColor("#FFFFFF"))
+    painter.setPen(text_color)
     painter.setFont(QFont("Arial", 28, QFont.Bold))
-    painter.drawText(QRect(0, 50, 500, 50), Qt.AlignCenter, "Panda Ledger")
+    painter.drawText(QRect(0, 50, 500, 50), Qt.AlignCenter, "PandaLedger")
     painter.setFont(QFont("Arial", 12))
-    painter.drawText(QRect(0, 100, 500, 30), Qt.AlignCenter, "Python Panda Studios Personal Accounting Software")
+    painter.drawText(QRect(0, 100, 500, 30), Qt.AlignCenter, "PythonPandaStudios Accounting")
     painter.end()
 
     splash = QSplashScreen(pixmap, Qt.WindowStaysOnTopHint)
     
-    # Add a progress bar to the splash screen
+    # Theme-aware progress bar
     progress_bar = QProgressBar(splash)
     progress_bar.setGeometry(50, 220, 400, 20)
-    progress_bar.setStyleSheet("""
-        QProgressBar { border: 1px solid #374151; border-radius: 5px; text-align: center; color: white; }
-        QProgressBar::chunk { background-color: #3B82F6; }
+    # Determine progress bar style based on theme lightness
+    is_dark = bg_color.lightness() < 128
+    border_color = "#374151" if is_dark else "#D1D5DB"
+    label_color = "white" if is_dark else "black"
+    
+    progress_bar.setStyleSheet(f"""
+        QProgressBar {{ border: 1px solid {border_color}; border-radius: 5px; text-align: center; color: {label_color}; }}
+        QProgressBar::chunk {{ background-color: #3B82F6; }}
     """)
     
     splash.show()
     
-    # Simulate loading process
     steps = ["Initializing Database...", "Loading Configuration...", "Applying Themes...", "Ready!"]
     for i, step in enumerate(steps):
-        splash.showMessage(f"  {step}", Qt.AlignBottom | Qt.AlignLeft, Qt.white)
+        splash.showMessage(f"  {step}", Qt.AlignBottom | Qt.AlignLeft, text_color)
         progress_bar.setValue((i + 1) * 25)
         QApplication.processEvents()
         time.sleep(0.5)
@@ -550,7 +555,16 @@ def show_splash():
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    splash = show_splash()
+    # Quick DB check to see which theme to use for the splash
+    temp_conn = sqlite3.connect(DB_FILE)
+    cursor = temp_conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
+    cursor.execute("SELECT value FROM config WHERE key='theme'")
+    row = cursor.fetchone()
+    saved_theme_name = row[0] if row else "Light"
+    temp_conn.close()
+    
+    splash = show_splash(THEMES[saved_theme_name].palette)
     
     window = BudgetApp()
     splash.finish(window)
