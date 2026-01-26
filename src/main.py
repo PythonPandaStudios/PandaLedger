@@ -1,5 +1,6 @@
 import sys
 import datetime
+from datetime import timedelta, date
 import calendar
 import sqlite3
 from typing import List, Dict
@@ -181,16 +182,73 @@ class BudgetApp(QMainWindow):
         self.conn.commit()
 
     def calculate_pay_dates(self):
-        """Calculates checks based on schedule settings."""
         self.pay_schedule = []
-        rate = self.current_config.get('rate', 45.78)
+        config = self.current_config
+        rate = config.get('rate', 45.78)
+        sched = config.get('schedule', "Semi-Monthly")
+
+        def get_work_hours(start_dt, end_dt):
+            """Counts Mon-Fri between dates and multiplies by 8 hours."""
+            work_days = 0
+            curr = start_dt
+            while curr <= end_dt:
+                if curr.weekday() < 5: # 0-4 is Mon-Fri
+                    work_days += 1
+                curr += timedelta(days=1)
+            return work_days * 8
         
-        # Simple Semi-Monthly Logic
-        for month in range(1, 13):
-            p1_date = datetime.date(CURRENT_YEAR, month, 7)
-            p2_date = datetime.date(CURRENT_YEAR, month, 22)
-            self.pay_schedule.append({'date': p1_date, 'hours': 80, 'rate': rate})
-            self.pay_schedule.append({'date': p2_date, 'hours': 80, 'rate': rate})
+        # Hours logic (assumes 2080 annual hours divided by periods)
+        if sched == "Weekly":
+            # Every Friday of the year
+            d = date(CURRENT_YEAR, 1, 1)
+            while d.weekday() != 4: d += timedelta(days=1) # Find first Friday
+            while d.year == CURRENT_YEAR:
+                self.pay_schedule.append({'date': d, 'hours': 40, 'rate': rate})
+                d += timedelta(weeks=1)
+
+        elif sched == "Bi-Weekly":
+            start_str = config.get('bw_start', f"{CURRENT_YEAR}-01-02")
+            d = date.fromisoformat(start_str)
+            while d.year == CURRENT_YEAR:
+                self.pay_schedule.append({'date': d, 'hours': 80, 'rate': rate})
+                d += timedelta(weeks=2)
+
+        elif sched == "Semi-Monthly":
+            for m in range(1, 13):
+                # --- Period 1: 1st to the 15th (Paid on the 22nd) ---
+                p1_start = date(CURRENT_YEAR, m, 1)
+                p1_end = date(CURRENT_YEAR, m, 15)
+                p1_pay_date = date(CURRENT_YEAR, m, 22)
+                
+                self.pay_schedule.append({
+                    'date': p1_pay_date, 
+                    'hours': get_work_hours(p1_start, p1_end), 
+                    'rate': rate
+                })
+
+                # --- Period 2: 16th to Last Day (Paid on the 7th of Next Month) ---
+                last_day = calendar.monthrange(CURRENT_YEAR, m)[1]
+                p2_start = date(CURRENT_YEAR, m, 16)
+                p2_end = date(CURRENT_YEAR, m, last_day)
+                
+                # Handle year-overflow for January 7th of the next year
+                pay_year = CURRENT_YEAR
+                pay_month = m + 1
+                if pay_month > 12:
+                    pay_month = 1
+                    pay_year += 1
+                
+                p2_pay_date = date(pay_year, pay_month, 7)
+                
+                self.pay_schedule.append({
+                    'date': p2_pay_date, 
+                    'hours': get_work_hours(p2_start, p2_end), 
+                    'rate': rate
+                })
+        elif sched == "Monthly":
+            m_day = int(config.get('m_day', 1))
+            for m in range(1, 13):
+                self.pay_schedule.append({'date': date(CURRENT_YEAR, m, m_day), 'hours': 173.33, 'rate': rate})
 
     def apply_theme(self, theme_name):
         self.current_theme = THEMES[theme_name]
