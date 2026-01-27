@@ -22,12 +22,10 @@ import ctypes
 
 # Updated Asset and App directory logic for PyInstaller compatibility
 if getattr(sys, 'frozen', False):
-    # If the app is compiled (frozen), the assets are extracted to sys._MEIPASS
     APP_DIR = os.path.dirname(sys.executable)
     BASE_PATH = sys._MEIPASS
     ASSET_DIR = os.path.join(BASE_PATH, "assests")
 else:
-    # If running in a standard dev environment
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
     BASE_PATH = os.path.dirname(APP_DIR)
     ASSET_DIR = os.path.join(BASE_PATH, "assests")
@@ -134,45 +132,34 @@ class BudgetApp(QMainWindow):
                 cursor.execute('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL)')
                 cursor.execute('CREATE TABLE IF NOT EXISTS deductions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, is_percent INTEGER, is_pre_tax INTEGER)')
         except sqlite3.Error as e:
-            print(f"Database Initialization Error: {e}")
+            QMessageBox.critical(self, "Database Error", f"Could not initialize database: {e}")
 
     def load_settings(self):
-        # Default fallback values for V0.1.0
         defaults = {
-            "schedule": "Semi-Monthly",
-            "income_type": "Hourly",
-            "rate": 45.78,
-            "theme": "Light",
-            "fed_rate": 12.0,
-            "state_rate": 4.4,
-            "add_tax_rate": 0.45,
-            "state": "Colorado",
-            "sm_p1_end": "15",
-            "sm_pay1": "22",
-            "sm_p2_end": "31",
-            "sm_pay2": "7"
+            "schedule": "Semi-Monthly", "income_type": "Hourly", "rate": 45.78,
+            "theme": "Light", "fed_rate": 12.0, "state_rate": 4.4, "add_tax_rate": 0.45,
+            "state": "Colorado", "sm_p1_end": "15", "sm_pay1": "22", "sm_p2_end": "31", "sm_pay2": "7"
         }
-
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT key, value FROM config")
-            db_settings = {r[0]: r[1] for r in cursor.fetchall()}
-        
-        # Merge DB settings into defaults
-        self.current_config = defaults.copy()
-        self.current_config.update(db_settings)
-        
-        # Ensure numeric conversion for required keys
-        numeric_keys = ['rate', 'state_rate', 'fed_rate', 'add_tax_rate']
-        for k in numeric_keys:
-            try:
-                self.current_config[k] = float(self.current_config[k])
-            except (ValueError, TypeError):
-                self.current_config[k] = defaults[k]
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT key, value FROM config")
+                db_settings = {r[0]: r[1] for r in cursor.fetchall()}
+            self.current_config = defaults.copy()
+            self.current_config.update(db_settings)
+            numeric_keys = ['rate', 'state_rate', 'fed_rate', 'add_tax_rate']
+            for k in numeric_keys:
+                try: self.current_config[k] = float(self.current_config[k])
+                except (ValueError, TypeError): self.current_config[k] = defaults[k]
+        except sqlite3.Error:
+            self.current_config = defaults
 
     def save_setting(self, key, value):
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
+        except sqlite3.Error as e:
+            print(f"Error saving setting {key}: {e}")
 
     def apply_theme(self, theme_name):
         self.current_config["theme"] = theme_name
@@ -311,10 +298,12 @@ class BudgetApp(QMainWindow):
 
     def add_deduction_ui(self, db_id=None, name="New", amount=0, is_pct=False, is_pre=True):
         if db_id is None:
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO deductions (name, amount, is_percent, is_pre_tax) VALUES (?,?,?,?)", (name, amount, int(is_pct), int(is_pre)))
-                db_id = cursor.lastrowid
+            try:
+                with sqlite3.connect(DB_FILE) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("INSERT INTO deductions (name, amount, is_percent, is_pre_tax) VALUES (?,?,?,?)", (name, amount, int(is_pct), int(is_pre)))
+                    db_id = cursor.lastrowid
+            except sqlite3.Error: return
         row = DeductionRow(db_id, name, amount, is_pct, is_pre)
         row.dataChanged.connect(self.sync_deduction)
         row.deleted.connect(self.delete_deduction)
@@ -323,10 +312,12 @@ class BudgetApp(QMainWindow):
 
     def add_expense_ui(self, db_id=None, name="New", amount=0):
         if db_id is None:
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO expenses (name, amount) VALUES (?,?)", (name, amount))
-                db_id = cursor.lastrowid
+            try:
+                with sqlite3.connect(DB_FILE) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("INSERT INTO expenses (name, amount) VALUES (?,?)", (name, amount))
+                    db_id = cursor.lastrowid
+            except sqlite3.Error: return
         row = ExpenseRow(db_id, name, amount)
         row.dataChanged.connect(self.sync_expense)
         row.deleted.connect(self.delete_expense)
@@ -335,108 +326,115 @@ class BudgetApp(QMainWindow):
 
     def sync_deduction(self):
         d = self.sender().get_values()
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.execute("UPDATE deductions SET name=?, amount=?, is_percent=?, is_pre_tax=? WHERE id=?", (d['name'], d['value'], int(d['is_percent']), int(d['is_pre_tax']), d['id']))
-        self.recalculate_budget()
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute("UPDATE deductions SET name=?, amount=?, is_percent=?, is_pre_tax=? WHERE id=?", (d['name'], d['value'], int(d['is_percent']), int(d['is_pre_tax']), d['id']))
+            self.recalculate_budget()
+        except sqlite3.Error: pass
 
     def sync_expense(self):
         e = self.sender().get_values()
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.execute("UPDATE expenses SET name=?, amount=? WHERE id=?", (e['name'], e['amount'], e['id']))
-        self.recalculate_budget()
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute("UPDATE expenses SET name=?, amount=? WHERE id=?", (e['name'], e['amount'], e['id']))
+            self.recalculate_budget()
+        except sqlite3.Error: pass
 
     def delete_deduction(self, db_id):
-        with sqlite3.connect(DB_FILE) as conn: conn.execute("DELETE FROM deductions WHERE id=?", (db_id,))
-        self.sender().setParent(None); self.recalculate_budget()
+        try:
+            with sqlite3.connect(DB_FILE) as conn: conn.execute("DELETE FROM deductions WHERE id=?", (db_id,))
+            self.sender().setParent(None); self.recalculate_budget()
+        except sqlite3.Error: pass
 
     def delete_expense(self, db_id):
-        with sqlite3.connect(DB_FILE) as conn: conn.execute("DELETE FROM expenses WHERE id=?", (db_id,))
-        self.sender().setParent(None); self.recalculate_budget()
+        try:
+            with sqlite3.connect(DB_FILE) as conn: conn.execute("DELETE FROM expenses WHERE id=?", (db_id,))
+            self.sender().setParent(None); self.recalculate_budget()
+        except sqlite3.Error: pass
 
     def recalculate_budget(self):
-        self.subtitle.setText(f"{self.current_config.get('schedule')} | {self.current_config.get('state')} Tax Rules")
-        expenses = [self.exp_layout.itemAt(i).widget().get_values() for i in range(self.exp_layout.count())]
-        total_exp = sum(e['amount'] for e in expenses)
-        self.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
-        deductions = [self.ded_layout.itemAt(i).widget().get_values() for i in range(self.ded_layout.count())]
-        
-        pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
-        pay_schedule.sort(key=lambda x: x['date'])
-        
-        self.year_table.setRowCount(0)
-        total_gross, total_net = 0, 0
-        monthly_data = {i: [] for i in range(12)}
-        for check in pay_schedule:
-            gross = check['hours'] * check['rate']
-            check_ded_details = []
-            pre_tax_total, post_tax_total = 0, 0
-            for d in deductions:
-                amt = d['value'] if not d['is_percent'] else gross * (d['value'] / 100)
-                check_ded_details.append({'name': d['name'], 'amount': amt})
-                if d['is_pre_tax']: pre_tax_total += amt
-                else: post_tax_total += amt
-            taxable = max(0, gross - pre_tax_total)
-            taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config)
-            net = gross - pre_tax_total - taxes.total_tax - post_tax_total
-            rem = net - (total_exp / 2)
-            total_gross += gross; total_net += net
-            row = self.year_table.rowCount(); self.year_table.insertRow(row)
-            self.year_table.setItem(row, 0, QTableWidgetItem(check['date'].strftime("%b %d")))
-            self.year_table.setItem(row, 1, QTableWidgetItem(str(check['hours'])))
-            self.year_table.setItem(row, 2, QTableWidgetItem(f"${check['rate']}"))
-            self.year_table.setItem(row, 3, QTableWidgetItem(f"${gross:,.2f}"))
-            self.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
-            self.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
-            
-            m_idx = check['date'].month - 1
-            if check['date'].year > self.current_year: m_idx = 0 
-            monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
-            
-        for child in self.card_gross.findChildren(QLabel):
-            if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
-        for child in self.card_net.findChildren(QLabel):
-            if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
-        for child in self.card_savings.findChildren(QLabel):
-            if child.objectName() == "StatValue": child.setText(f"${total_net - (total_exp * 12):,.2f}")
-        for m_idx, ref in enumerate(self.month_tabs_refs):
-            checks = monthly_data[m_idx]
-            ref['table'].setRowCount(0)
-            m_net = sum(c['net'] for c in checks)
-            for c in checks:
-                r = ref['table'].rowCount(); ref['table'].insertRow(r)
-                ref['table'].setItem(r, 0, QTableWidgetItem(c['date'].strftime("%b %d")))
-                ref['table'].setItem(r, 1, QTableWidgetItem(f"${c['gross']:,.2f}"))
-                ref['table'].setItem(r, 2, QTableWidgetItem(f"${c['net']:,.2f}"))
-            ref['inc'].setText(f"${m_net:,.2f}")
-            ref['exp'].setText(f"${total_exp:,.2f}")
-            ref['rem'].setText(f"${m_net - total_exp:,.2f}")
-            grid = ref['grid']
-            while grid.count():
-                item = grid.takeAt(0)
-                if item.widget(): item.widget().deleteLater()
-            row_idx = 0
-            for check_data in checks:
-                title = QLabel(f"Paycheck: {check_data['date'].strftime('%b %d, %Y')}")
-                title.setStyleSheet("font-weight: bold; color: #3B82F6; font-size: 15px;")
-                grid.addWidget(title, row_idx, 0, 1, 2); row_idx += 1
-                grid.addWidget(QLabel("Gross Pay"), row_idx, 0)
-                v_gross = QLabel(f"${check_data['gross']:,.2f}"); v_gross.setAlignment(Qt.AlignRight)
-                grid.addWidget(v_gross, row_idx, 1); row_idx += 1
-                t = check_data['taxes']
-                tax_map = [("Federal Income Tax", t.fed_tax), ("State Income Tax", t.state_tax), ("Social Security", t.ss_tax), ("Medicare", t.medicare_tax), ("Other Payroll Tax", t.additional_tax)]
-                for label, val in tax_map:
-                    if val > 0:
-                        l = QLabel(f"  {label}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
-                        v = QLabel(f"-${val:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
+        try:
+            self.subtitle.setText(f"{self.current_config.get('schedule')} | {self.current_config.get('state')} Tax Rules")
+            expenses = [self.exp_layout.itemAt(i).widget().get_values() for i in range(self.exp_layout.count())]
+            total_exp = sum(e['amount'] for e in expenses)
+            self.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
+            deductions = [self.ded_layout.itemAt(i).widget().get_values() for i in range(self.ded_layout.count())]
+            pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
+            pay_schedule.sort(key=lambda x: x['date'])
+            self.year_table.setRowCount(0)
+            total_gross, total_net = 0, 0
+            monthly_data = {i: [] for i in range(12)}
+            for check in pay_schedule:
+                gross = check['hours'] * check['rate']
+                check_ded_details = []
+                pre_tax_total, post_tax_total = 0, 0
+                for d in deductions:
+                    amt = d['value'] if not d['is_percent'] else gross * (d['value'] / 100)
+                    check_ded_details.append({'name': d['name'], 'amount': amt})
+                    if d['is_pre_tax']: pre_tax_total += amt
+                    else: post_tax_total += amt
+                taxable = max(0, gross - pre_tax_total)
+                taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config)
+                net = gross - pre_tax_total - taxes.total_tax - post_tax_total
+                rem = net - (total_exp / 2)
+                total_gross += gross; total_net += net
+                row = self.year_table.rowCount(); self.year_table.insertRow(row)
+                self.year_table.setItem(row, 0, QTableWidgetItem(check['date'].strftime("%b %d")))
+                self.year_table.setItem(row, 1, QTableWidgetItem(str(check['hours'])))
+                self.year_table.setItem(row, 2, QTableWidgetItem(f"${check['rate']}"))
+                self.year_table.setItem(row, 3, QTableWidgetItem(f"${gross:,.2f}"))
+                self.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
+                self.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
+                m_idx = check['date'].month - 1
+                if check['date'].year > self.current_year: m_idx = 0 
+                monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
+            for child in self.card_gross.findChildren(QLabel):
+                if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
+            for child in self.card_net.findChildren(QLabel):
+                if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
+            for child in self.card_savings.findChildren(QLabel):
+                if child.objectName() == "StatValue": child.setText(f"${total_net - (total_exp * 12):,.2f}")
+            for m_idx, ref in enumerate(self.month_tabs_refs):
+                checks = monthly_data[m_idx]
+                ref['table'].setRowCount(0)
+                m_net = sum(c['net'] for c in checks)
+                for c in checks:
+                    r = ref['table'].rowCount(); ref['table'].insertRow(r)
+                    ref['table'].setItem(r, 0, QTableWidgetItem(c['date'].strftime("%b %d")))
+                    ref['table'].setItem(r, 1, QTableWidgetItem(f"${c['gross']:,.2f}"))
+                    ref['table'].setItem(r, 2, QTableWidgetItem(f"${c['net']:,.2f}"))
+                ref['inc'].setText(f"${m_net:,.2f}")
+                ref['exp'].setText(f"${total_exp:,.2f}")
+                ref['rem'].setText(f"${m_net - total_exp:,.2f}")
+                grid = ref['grid']
+                while grid.count():
+                    item = grid.takeAt(0)
+                    if item.widget(): item.widget().deleteLater()
+                row_idx = 0
+                for check_data in checks:
+                    title = QLabel(f"Paycheck: {check_data['date'].strftime('%b %d, %Y')}")
+                    title.setStyleSheet("font-weight: bold; color: #3B82F6; font-size: 15px;")
+                    grid.addWidget(title, row_idx, 0, 1, 2); row_idx += 1
+                    grid.addWidget(QLabel("Gross Pay"), row_idx, 0)
+                    v_gross = QLabel(f"${check_data['gross']:,.2f}"); v_gross.setAlignment(Qt.AlignRight)
+                    grid.addWidget(v_gross, row_idx, 1); row_idx += 1
+                    t = check_data['taxes']
+                    tax_map = [("Federal", t.fed_tax), ("State", t.state_tax), ("SS", t.ss_tax), ("Med", t.medicare_tax), ("Addtl", t.additional_tax)]
+                    for label, val in tax_map:
+                        if val > 0:
+                            l = QLabel(f"  {label}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
+                            v = QLabel(f"-${val:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
+                            row_idx += 1
+                    for ded in check_data['deductions_list']:
+                        l = QLabel(f"  {ded['name']}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
+                        v = QLabel(f"-${ded['amount']:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
                         row_idx += 1
-                for ded in check_data['deductions_list']:
-                    l = QLabel(f"  {ded['name']}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
-                    v = QLabel(f"-${ded['amount']:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
-                    row_idx += 1
-                net_l = QLabel("Check Net Total"); net_l.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); grid.addWidget(net_l, row_idx, 0)
-                net_v = QLabel(f"${check_data['net']:,.2f}"); net_v.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); net_v.setAlignment(Qt.AlignRight); grid.addWidget(net_v, row_idx, 1)
-                row_idx += 1
-                grid.addWidget(QLabel(""), row_idx, 0); row_idx += 1 
+                    net_l, net_v = QLabel("Net Total"), QLabel(f"${check_data['net']:,.2f}")
+                    net_l.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); net_v.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); net_v.setAlignment(Qt.AlignRight)
+                    grid.addWidget(net_l, row_idx, 0); grid.addWidget(net_v, row_idx, 1); row_idx += 1
+                    grid.addWidget(QLabel(""), row_idx, 0); row_idx += 1 
+        except Exception as e:
+            print(f"Recalculation error: {e}")
 
     def load_data(self):
         try:
@@ -446,8 +444,7 @@ class BudgetApp(QMainWindow):
                 for r in cursor.fetchall(): self.add_deduction_ui(r[0], r[1], r[2], bool(r[3]), bool(r[4]))
                 cursor.execute("SELECT id, name, amount FROM expenses")
                 for r in cursor.fetchall(): self.add_expense_ui(r[0], r[1], r[2])
-        except sqlite3.Error as e:
-            print(f"Data Load Error: {e}")
+        except sqlite3.Error: pass
 
     def export_to_clipboard(self):
         output = "Date\tHrs\tRate\tGross\tNet\tRemaining\n"
@@ -458,47 +455,37 @@ class BudgetApp(QMainWindow):
         QMessageBox.information(self, "Exported", "Data copied for Excel.")
 
 def show_splash(theme_palette):
-    bg_color = QColor(theme_palette["bg_primary"])
-    text_color = QColor(theme_palette["text_primary"])
+    bg_color, text_color = QColor(theme_palette["bg_primary"]), QColor(theme_palette["text_primary"])
     pixmap = QPixmap(500, 300); pixmap.fill(bg_color)
-    painter = QPainter(pixmap)
-    painter.setPen(text_color); painter.setFont(QFont("Arial", 28, QFont.Bold))
+    painter = QPainter(pixmap); painter.setPen(text_color); painter.setFont(QFont("Segoe UI", 28, QFont.Bold))
     painter.drawText(QRect(0, 50, 500, 50), Qt.AlignCenter, "PandaLedger")
-    painter.setFont(QFont("Arial", 12)); painter.drawText(QRect(0, 100, 500, 30), Qt.AlignCenter, "PythonPandaStudios Accounting")
+    painter.setFont(QFont("Segoe UI", 12)); painter.drawText(QRect(0, 100, 500, 30), Qt.AlignCenter, "PythonPandaStudios")
     painter.end()
     splash = QSplashScreen(pixmap, Qt.WindowStaysOnTopHint)
     progress_bar = QProgressBar(splash); progress_bar.setGeometry(50, 220, 400, 20); progress_bar.setValue(0)
     is_dark = bg_color.lightness() < 128
     border_color = "#374151" if is_dark else "#D1D5DB"
     progress_bar.setStyleSheet(f"QProgressBar {{ border: 1px solid {border_color}; border-radius: 5px; text-align: center; color: {'white' if is_dark else 'black'}; }} QProgressBar::chunk {{ background-color: #3B82F6; }}")
-    splash.show(); QApplication.processEvents(); time.sleep(0.5)
-    steps = ["Connecting to Database...", "Loading Configuration...", "Applying Themes...", "Ready!"]
+    splash.show(); QApplication.processEvents(); time.sleep(0.3)
+    steps = ["Database Check", "Config Load", "Theme Selection", "Ready"]
     for i, step in enumerate(steps):
-        progress_bar.setValue((i + 1) * 25)
-        splash.showMessage(f"  {step}", Qt.AlignBottom | Qt.AlignLeft, text_color)
-        QApplication.processEvents(); time.sleep(0.5)
+        progress_bar.setValue((i + 1) * 25); splash.showMessage(f"  {step}", Qt.AlignBottom | Qt.AlignLeft, text_color)
+        QApplication.processEvents(); time.sleep(0.3)
     return splash
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("Panda Ledger")
     app.setOrganizationName("Python Panda Studios")
-    
-    if os.path.exists(ICON_PATH):
-        app_icon = QIcon(ICON_PATH)
-        app.setWindowIcon(app_icon)
-
+    if os.path.exists(ICON_PATH): app.setWindowIcon(QIcon(ICON_PATH))
     if sys.platform == 'win32':
-        myappid = 'pythonpandastudios.pandaledger.1.0'
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('pythonpandastudios.pandaledger.1.0')
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
         cursor.execute("SELECT value FROM config WHERE key='theme'")
         row = cursor.fetchone()
         saved_theme = row[0] if row else "Light"
-
     splash = show_splash(THEMES[saved_theme].palette)
     window = BudgetApp()
     splash.finish(window)

@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QComboBox, 
                                QLineEdit, QDialogButtonBox, QLabel, QWidget, QMessageBox)
 from PySide6.QtGui import QDoubleValidator, QCloseEvent
+from PySide6.QtCore import Qt
 
 class PayrollSettingsDialog(QDialog):
     """Submenu for tax rates and pay schedules with dynamic period logic."""
@@ -12,7 +13,9 @@ class PayrollSettingsDialog(QDialog):
         # Keep a copy of the original state for change detection
         self.initial_state = self.config.copy()
         
+        # Strict validation: 0.00 to 1,000,000.00 with 2 decimals
         self.num_validator = QDoubleValidator(0.0, 1000000.0, 2)
+        self.num_validator.setNotation(QDoubleValidator.StandardNotation)
         
         self.setup_ui()
         self.toggle_schedule_inputs()
@@ -62,7 +65,7 @@ class PayrollSettingsDialog(QDialog):
         layout.addLayout(self.form)
         
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.button_box.accepted.connect(self.accept)
+        self.button_box.accepted.connect(self.validate_and_accept)
         self.button_box.rejected.connect(self.handle_cancel)
         layout.addWidget(self.button_box)
 
@@ -73,10 +76,10 @@ class PayrollSettingsDialog(QDialog):
 
         sched = self.schedule_combo.currentText()
         if sched == "Semi-Monthly":
-            self.p1_end = QLineEdit(self.config.get('sm_p1_end', "15"))
-            self.pay1 = QLineEdit(self.config.get('sm_pay1', "22"))
-            self.p2_end = QLineEdit(self.config.get('sm_p2_end', "31"))
-            self.pay2 = QLineEdit(self.config.get('sm_pay2', "7"))
+            self.p1_end = QLineEdit(str(self.config.get('sm_p1_end', "15")))
+            self.pay1 = QLineEdit(str(self.config.get('sm_pay1', "22")))
+            self.p2_end = QLineEdit(str(self.config.get('sm_p2_end', "31")))
+            self.pay2 = QLineEdit(str(self.config.get('sm_pay2', "7")))
             self.schedule_params_layout.addRow("First Period End (Day):", self.p1_end)
             self.schedule_params_layout.addRow("First Pay Day (Date):", self.pay1)
             self.schedule_params_layout.addRow("Second Period End (Day):", self.p2_end)
@@ -85,8 +88,17 @@ class PayrollSettingsDialog(QDialog):
             self.bw_start = QLineEdit(self.config.get('bw_start', "2026-01-02"))
             self.schedule_params_layout.addRow("First Pay Date of Year:", self.bw_start)
         elif sched == "Monthly":
-            self.m_day = QLineEdit(self.config.get('m_day', "1"))
+            self.m_day = QLineEdit(str(self.config.get('m_day', "1")))
             self.schedule_params_layout.addRow("Pay Day of Month:", self.m_day)
+
+    def validate_and_accept(self):
+        """Ensure all numeric fields are valid before closing."""
+        inputs = [self.rate_input, self.state_rate, self.fed_rate, self.add_tax_rate]
+        for i in inputs:
+            if not i.text() or i.text() == ".":
+                QMessageBox.critical(self, "Validation Error", "Please ensure all tax rates and income values are valid numbers.")
+                return
+        self.accept()
 
     def get_current_ui_data(self):
         """Helper to scrape the current UI state without finalizing."""
@@ -98,11 +110,16 @@ class PayrollSettingsDialog(QDialog):
             "state_rate": float(self.state_rate.text() or 0),
             "fed_rate": float(self.fed_rate.text() or 0),
             "add_tax_rate": float(self.add_tax_rate.text() or 0),
-            "theme": self.config.get("theme", "Light") # Preserve theme
+            "theme": self.config.get("theme", "Light")
         }
         sched = data["schedule"]
         if sched == "Semi-Monthly" and hasattr(self, 'p1_end'):
-            data.update({"sm_p1_end": self.p1_end.text(), "sm_pay1": self.pay1.text(), "sm_p2_end": self.p2_end.text(), "sm_pay2": self.pay2.text()})
+            data.update({
+                "sm_p1_end": self.p1_end.text(), 
+                "sm_pay1": self.pay1.text(), 
+                "sm_p2_end": self.p2_end.text(), 
+                "sm_pay2": self.pay2.text()
+            })
         elif sched == "Bi-Weekly" and hasattr(self, 'bw_start'):
             data.update({"bw_start": self.bw_start.text()})
         elif sched == "Monthly" and hasattr(self, 'm_day'):
@@ -112,8 +129,6 @@ class PayrollSettingsDialog(QDialog):
     def handle_cancel(self):
         """Checks for changes before allowing a silent close."""
         current_data = self.get_current_ui_data()
-        
-        # Compare current UI to initial state
         has_changes = False
         for key, val in current_data.items():
             if key in self.initial_state and str(val) != str(self.initial_state[key]):
