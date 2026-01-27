@@ -23,14 +23,10 @@ import ctypes
 # Use this to find the directory of the actual executable or script
 if getattr(sys, 'frozen', False):
     APP_DIR = os.path.dirname(sys.executable)
-    # If frozen (PyInstaller), assets might be in a different relative spot
     ASSET_DIR = os.path.join(sys._MEIPASS, "assests") if hasattr(sys, '_MEIPASS') else os.path.join(APP_DIR, "assests")
-    print(ASSET_DIR)
 else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
-    # assets is one level up from src/
     ASSET_DIR = os.path.join(os.path.dirname(APP_DIR), "assests")
-    print(ASSET_DIR)
 
 DB_FILE = os.path.join(APP_DIR, "budget_data.db")
 ICON_PATH = os.path.join(ASSET_DIR, "PandaLedger_256.png")
@@ -65,7 +61,6 @@ class DeductionRow(QWidget):
         layout.addWidget(self.tax_combo, 0)
         layout.addWidget(self.del_btn, 0)
 
-        # Connect signals
         self.name_input.textChanged.connect(lambda: self.dataChanged.emit())
         self.amount_input.textChanged.connect(lambda: self.dataChanged.emit())
         self.type_combo.currentIndexChanged.connect(lambda: self.dataChanged.emit())
@@ -110,9 +105,12 @@ class ExpenseRow(QWidget):
 class BudgetApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PandaLedger")
+        self.setWindowTitle("Panda Ledger")
         self.resize(1350, 900)
-        self.set_app_icon()
+        
+        # Ensure the window itself has the icon
+        if os.path.exists(ICON_PATH):
+            self.setWindowIcon(QIcon(ICON_PATH))
         
         self.current_year = datetime.date.today().year
         self.calculator = PayrollCalculator()
@@ -124,12 +122,6 @@ class BudgetApp(QMainWindow):
         self.setup_ui()
         self.apply_theme(self.current_config.get("theme", "Light"))
         self.load_data()
-
-    def set_app_icon(self):
-        if os.path.exists(ICON_PATH):
-            app_icon = QIcon(ICON_PATH)
-            self.setWindowIcon(app_icon)
-            QApplication.setWindowIcon(app_icon)
 
     def init_db(self):
         with sqlite3.connect(DB_FILE) as conn:
@@ -173,7 +165,6 @@ class BudgetApp(QMainWindow):
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0,0,0,0)
 
-        # Header
         header = QFrame(objectName="Header")
         header.setFixedHeight(80)
         h_layout = QHBoxLayout(header)
@@ -201,7 +192,6 @@ class BudgetApp(QMainWindow):
         h_layout.addWidget(copy_btn)
         main_layout.addWidget(header)
 
-        # Sidebar
         content = QHBoxLayout()
         sidebar = QFrame(objectName="Sidebar")
         sidebar.setFixedWidth(400)
@@ -235,7 +225,6 @@ class BudgetApp(QMainWindow):
         s_layout.addWidget(self.lbl_total_exp)
         content.addWidget(sidebar)
 
-        # Tabs
         self.tabs = QTabWidget()
         self.setup_year_tab()
         self.month_names = list(calendar.month_name)[1:]
@@ -337,40 +326,29 @@ class BudgetApp(QMainWindow):
         self.sender().setParent(None); self.recalculate_budget()
 
     def recalculate_budget(self):
-        """Pure logic and UI update loop."""
         self.subtitle.setText(f"{self.current_config.get('schedule')} | {self.current_config.get('state')} Tax Rules")
-        
-        # Get Expenses
         expenses = [self.exp_layout.itemAt(i).widget().get_values() for i in range(self.exp_layout.count())]
         total_exp = sum(e['amount'] for e in expenses)
         self.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
-        
-        # Get Deductions
         deductions = [self.ded_layout.itemAt(i).widget().get_values() for i in range(self.ded_layout.count())]
-        
         pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
         self.year_table.setRowCount(0)
         total_gross, total_net = 0, 0
         monthly_data = {i: [] for i in range(12)}
-
         for check in pay_schedule:
             gross = check['hours'] * check['rate']
             check_ded_details = []
             pre_tax_total, post_tax_total = 0, 0
-            
             for d in deductions:
                 amt = d['value'] if not d['is_percent'] else gross * (d['value'] / 100)
                 check_ded_details.append({'name': d['name'], 'amount': amt})
                 if d['is_pre_tax']: pre_tax_total += amt
                 else: post_tax_total += amt
-
             taxable = max(0, gross - pre_tax_total)
             taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config)
             net = gross - pre_tax_total - taxes.total_tax - post_tax_total
             rem = net - (total_exp / 2)
-
             total_gross += gross; total_net += net
-            
             row = self.year_table.rowCount(); self.year_table.insertRow(row)
             self.year_table.setItem(row, 0, QTableWidgetItem(check['date'].strftime("%b %d")))
             self.year_table.setItem(row, 1, QTableWidgetItem(str(check['hours'])))
@@ -378,21 +356,15 @@ class BudgetApp(QMainWindow):
             self.year_table.setItem(row, 3, QTableWidgetItem(f"${gross:,.2f}"))
             self.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
             self.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
-            
-            # Map back to month tabs
             m_idx = check['date'].month - 1
-            if check['date'].year > self.current_year: m_idx = 0 # Handle late period 2 pay in Jan
+            if check['date'].year > self.current_year: m_idx = 0 
             monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
-
-        # Update Stat Cards
         for child in self.card_gross.findChildren(QLabel):
             if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
         for child in self.card_net.findChildren(QLabel):
             if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
         for child in self.card_savings.findChildren(QLabel):
             if child.objectName() == "StatValue": child.setText(f"${total_net - (total_exp * 12):,.2f}")
-
-        # Update Monthly Tabs
         for m_idx, ref in enumerate(self.month_tabs_refs):
             checks = monthly_data[m_idx]
             ref['table'].setRowCount(0)
@@ -402,28 +374,21 @@ class BudgetApp(QMainWindow):
                 ref['table'].setItem(r, 0, QTableWidgetItem(c['date'].strftime("%b %d")))
                 ref['table'].setItem(r, 1, QTableWidgetItem(f"${c['gross']:,.2f}"))
                 ref['table'].setItem(r, 2, QTableWidgetItem(f"${c['net']:,.2f}"))
-            
             ref['inc'].setText(f"${m_net:,.2f}")
             ref['exp'].setText(f"${total_exp:,.2f}")
             ref['rem'].setText(f"${m_net - total_exp:,.2f}")
-            
-            # Build Detailed Breakdown Grid
             grid = ref['grid']
             while grid.count():
                 item = grid.takeAt(0)
                 if item.widget(): item.widget().deleteLater()
-            
             row_idx = 0
             for check_data in checks:
                 title = QLabel(f"Paycheck: {check_data['date'].strftime('%b %d, %Y')}")
                 title.setStyleSheet("font-weight: bold; color: #3B82F6; font-size: 15px;")
                 grid.addWidget(title, row_idx, 0, 1, 2); row_idx += 1
-                
                 grid.addWidget(QLabel("Gross Pay"), row_idx, 0)
                 v_gross = QLabel(f"${check_data['gross']:,.2f}"); v_gross.setAlignment(Qt.AlignRight)
                 grid.addWidget(v_gross, row_idx, 1); row_idx += 1
-                
-                # Taxes
                 t = check_data['taxes']
                 tax_map = [("Federal Income Tax", t.fed_tax), ("State Income Tax", t.state_tax), ("Social Security", t.ss_tax), ("Medicare", t.medicare_tax), ("Other Payroll Tax", t.additional_tax)]
                 for label, val in tax_map:
@@ -431,18 +396,14 @@ class BudgetApp(QMainWindow):
                         l = QLabel(f"  {label}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
                         v = QLabel(f"-${val:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
                         row_idx += 1
-                
-                # Deductions
                 for ded in check_data['deductions_list']:
                     l = QLabel(f"  {ded['name']}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
                     v = QLabel(f"-${ded['amount']:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
                     row_idx += 1
-                
-                # Net
                 net_l = QLabel("Check Net Total"); net_l.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); grid.addWidget(net_l, row_idx, 0)
                 net_v = QLabel(f"${check_data['net']:,.2f}"); net_v.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); net_v.setAlignment(Qt.AlignRight); grid.addWidget(net_v, row_idx, 1)
                 row_idx += 1
-                grid.addWidget(QLabel(""), row_idx, 0); row_idx += 1 # Spacer
+                grid.addWidget(QLabel(""), row_idx, 0); row_idx += 1 
 
     def load_data(self):
         with sqlite3.connect(DB_FILE) as conn:
@@ -469,14 +430,11 @@ def show_splash(theme_palette):
     painter.drawText(QRect(0, 50, 500, 50), Qt.AlignCenter, "PandaLedger")
     painter.setFont(QFont("Arial", 12)); painter.drawText(QRect(0, 100, 500, 30), Qt.AlignCenter, "PythonPandaStudios Accounting")
     painter.end()
-
     splash = QSplashScreen(pixmap, Qt.WindowStaysOnTopHint)
     progress_bar = QProgressBar(splash); progress_bar.setGeometry(50, 220, 400, 20); progress_bar.setValue(0)
-    
     is_dark = bg_color.lightness() < 128
     border_color = "#374151" if is_dark else "#D1D5DB"
     progress_bar.setStyleSheet(f"QProgressBar {{ border: 1px solid {border_color}; border-radius: 5px; text-align: center; color: {'white' if is_dark else 'black'}; }} QProgressBar::chunk {{ background-color: #3B82F6; }}")
-    
     splash.show(); QApplication.processEvents(); time.sleep(0.5)
     steps = ["Connecting to Database...", "Loading Configuration...", "Applying Themes...", "Ready!"]
     for i, step in enumerate(steps):
@@ -488,7 +446,21 @@ def show_splash(theme_palette):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # Pre-load theme for splash
+    # 1. CRITICAL: Set application identity for OS Dock/Taskbar
+    app.setApplicationName("Panda Ledger")
+    app.setOrganizationName("Python Panda Studios")
+    
+    # 2. CRITICAL: Global App Icon (Fixes Dock/Taskbar icons)
+    if os.path.exists(ICON_PATH):
+        app_icon = QIcon(ICON_PATH)
+        app.setWindowIcon(app_icon)
+
+
+    # Windows-specific grouping fix
+    if sys.platform == 'win32':
+        myappid = 'pythonpandastudios.pandaledger.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
@@ -496,11 +468,6 @@ if __name__ == "__main__":
         row = cursor.fetchone()
         saved_theme = row[0] if row else "Light"
 
-    # FIX: Ensure the taskbar uses the custom window icon on Windows
-    if sys.platform == 'win32':
-        myappid = 'pythonpandastudios.pandaledger.1.0' # unique string
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    
     splash = show_splash(THEMES[saved_theme].palette)
     window = BudgetApp()
     splash.finish(window)
