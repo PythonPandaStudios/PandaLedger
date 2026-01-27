@@ -9,6 +9,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -47,9 +50,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install Dependencies
+        # FIXED: Added 'Pillow' so PyInstaller can convert PNG icons to ICO
         run: |
           python -m pip install --upgrade pip
-          pip install PySide6 pyinstaller
+          pip install PySide6 pyinstaller Pillow
       - name: Build Executable
         run: |
           pyinstaller --noconfirm --onefile --windowed `
