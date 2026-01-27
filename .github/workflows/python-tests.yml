@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main", "dev" ]
     tags:
-      - 'v*' # Trigger build on version tags
+      - 'v*'
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   test:
+    name: Run Tests (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,14 +33,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install PySide6 pytest
-      - name: Run Tests with Xvfb
+      - name: Run Tests
         env:
           DISPLAY: :99.0
         run: |
           Xvfb :99 -screen 0 1024x768x24 &
           pytest
 
-  build:
+  build-windows:
+    name: Build Windows
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
@@ -50,7 +52,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install Dependencies
-        # FIXED: Added 'Pillow' so PyInstaller can convert PNG icons to ICO
         run: |
           python -m pip install --upgrade pip
           pip install PySide6 pyinstaller Pillow
@@ -61,9 +62,45 @@ jobs:
           --icon "assets/PandaLedger_256.png" `
           --name "PandaLedger" `
           src/main.py
-      - name: Release
+      - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
           files: dist/PandaLedger.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    name: Build Linux
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install System Dependencies
+        # PyInstaller needs these to bundle the correct shared libraries from the OS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 \
+          libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 \
+          libxcb-xfixes0 libopengl0 libegl1
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 pyinstaller Pillow
+      - name: Build Binary
+        # Note: Separator is ':' for Linux, and we rename output to include -Linux
+        run: |
+          pyinstaller --noconfirm --onefile --windowed \
+          --add-data "assets:assets" \
+          --name "PandaLedger-Linux" \
+          src/main.py
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/PandaLedger-Linux
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
