@@ -57,14 +57,10 @@ class PayrollCalculator:
 
     def calculate_pay_dates(self, config: Dict, year: int) -> List[Dict]:
         """Generates the full year pay schedule based on config."""
-        schedule = []
+        temp_dates = []
         rate = float(config.get('rate', 0))
         sched_type = config.get('schedule', "Semi-Monthly")
         income_type = config.get('income_type', "Hourly")
-
-        # Determine if we need to calculate a per-period salary
-        # We calculate the full year first to get the count for salary distribution
-        temp_dates = []
 
         if sched_type == "Weekly":
             d = date(year, 1, 1)
@@ -84,40 +80,41 @@ class PayrollCalculator:
                 d += timedelta(weeks=2)
 
         elif sched_type == "Semi-Monthly":
-            # Fetch custom days from config, fallback to standard 15/22 and 31/7
             p1_end_day = int(config.get('sm_p1_end', 15))
             p1_pay_day = int(config.get('sm_pay1', 22))
             p2_pay_day = int(config.get('sm_pay2', 7))
 
-            for m in range(1, 13):
-                # Period 1: Typically 1st to 15th, paid on 22nd
-                p1_pay = date(year, m, p1_pay_day)
-                p1_hours = self.get_work_hours(date(year, m, 1), date(year, m, p1_end_day))
-                temp_dates.append({'date': p1_pay, 'hours': p1_hours})
+            # Include Dec of previous year to catch the Jan 7th payment of the current year
+            months_to_calc = [(year - 1, 12)] + [(year, m) for m in range(1, 13)]
+            
+            for y, m in months_to_calc:
+                # Period 1
+                p1_pay = date(y, m, p1_pay_day)
+                if p1_pay.year == year:
+                    p1_hours = self.get_work_hours(date(y, m, 1), date(y, m, p1_end_day))
+                    temp_dates.append({'date': p1_pay, 'hours': p1_hours})
 
-                # Period 2: Typically 16th to end of month, paid on 7th of next month
-                last_day = calendar.monthrange(year, m)[1]
-                pay_year, pay_month = (year, m + 1) if m < 12 else (year + 1, 1)
+                # Period 2
+                last_day = calendar.monthrange(y, m)[1]
+                pay_year, pay_month = (y, m + 1) if m < 12 else (y + 1, 1)
                 p2_pay = date(pay_year, pay_month, p2_pay_day)
-                p2_hours = self.get_work_hours(date(year, m, p1_end_day + 1), date(year, m, last_day))
-                temp_dates.append({'date': p2_pay, 'hours': p2_hours})
+                if p2_pay.year == year:
+                    p2_hours = self.get_work_hours(date(y, m, p1_end_day + 1), date(y, m, last_day))
+                    temp_dates.append({'date': p2_pay, 'hours': p2_hours})
 
         elif sched_type == "Monthly":
             m_day = int(config.get('m_day', 1))
             for m in range(1, 13):
                 temp_dates.append({'date': date(year, m, m_day), 'hours': 173.33})
 
-        # Apply Salary vs Hourly logic to the generated dates
+        schedule = []
         num_periods = len(temp_dates)
         for item in temp_dates:
             if income_type == "Salary":
-                # For salary, we divide the annual rate by number of pay periods
                 period_gross = rate / num_periods if num_periods > 0 else 0
-                # We calculate an "effective rate" for the table display
                 eff_rate = period_gross / item['hours'] if item['hours'] > 0 else 0
                 schedule.append({'date': item['date'], 'hours': item['hours'], 'rate': round(eff_rate, 2)})
             else:
-                # Standard hourly logic
                 schedule.append({'date': item['date'], 'hours': item['hours'], 'rate': rate})
 
         return schedule
