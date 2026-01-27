@@ -169,7 +169,7 @@ class BudgetApp(QMainWindow):
         header.setFixedHeight(80)
         h_layout = QHBoxLayout(header)
         title_box = QVBoxLayout()
-        title_box.addWidget(QLabel("Panda Ledger", objectName="HeaderTitle"))
+        title_box.addWidget(QLabel("PandaLedger", objectName="HeaderTitle"))
         self.subtitle = QLabel("", objectName="HeaderSubtitle")
         title_box.addWidget(self.subtitle)
         
@@ -331,7 +331,11 @@ class BudgetApp(QMainWindow):
         total_exp = sum(e['amount'] for e in expenses)
         self.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
         deductions = [self.ded_layout.itemAt(i).widget().get_values() for i in range(self.ded_layout.count())]
+        
+        # Fetch and sort pay schedule by date to ensure proper ordering in the UI
         pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
+        pay_schedule.sort(key=lambda x: x['date'])
+        
         self.year_table.setRowCount(0)
         total_gross, total_net = 0, 0
         monthly_data = {i: [] for i in range(12)}
@@ -356,9 +360,14 @@ class BudgetApp(QMainWindow):
             self.year_table.setItem(row, 3, QTableWidgetItem(f"${gross:,.2f}"))
             self.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
             self.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
+            
+            # Determine correct month index for the month tabs
             m_idx = check['date'].month - 1
-            if check['date'].year > self.current_year: m_idx = 0 
+            if check['date'].year > self.current_year: 
+                # If the pay date rolls into the next year (e.g., Jan 7th), assign to January tab
+                m_idx = 0 
             monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
+            
         for child in self.card_gross.findChildren(QLabel):
             if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
         for child in self.card_net.findChildren(QLabel):
@@ -447,16 +456,13 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     # 1. CRITICAL: Set application identity for OS Dock/Taskbar
-    app_name = "PandaLedger"
-    app.setApplicationName(app_name)
-    app.setOrganizationName("PythonPandaStudios")
-    app.setProperty("desktopFileName", app_name)
+    app.setApplicationName("Panda Ledger")
+    app.setOrganizationName("Python Panda Studios")
     
     # 2. CRITICAL: Global App Icon (Fixes Dock/Taskbar icons)
     if os.path.exists(ICON_PATH):
         app_icon = QIcon(ICON_PATH)
         app.setWindowIcon(app_icon)
-        QApplication.setWindowIcon(app_icon)
 
 
     # Windows-specific grouping fix
