@@ -1,49 +1,65 @@
-# This workflow automates the testing of PandaLedger's accounting logic on every update.
-name: CI
+name: CI & Release Build
 
 on:
   push:
     branches: [ "main", "dev" ]
+    tags:
+      - 'v*' # Trigger build on version tags
   pull_request:
     branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
-  build_and_test:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Standard Checkout
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      # 2. Setup Python environment
+      - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip' # Speeds up subsequent runs by caching dependencies
-
-      # 3. Install Linux System Dependencies (Required for PySide6/GUI apps)
+          cache: 'pip'
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 \
           libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 \
           libxcb-xfixes0 libopengl0 libegl1
-
-      # 4. Install Project Dependencies
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install PySide6 pytest
-
-      # 5. Run Unit Tests using a Virtual Display (Xvfb)
       - name: Run Tests with Xvfb
         env:
           DISPLAY: :99.0
         run: |
           Xvfb :99 -screen 0 1024x768x24 &
           pytest
+
+  build:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 pyinstaller
+      - name: Build Executable
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+          --add-data "assests;assests" `
+          --icon "assests/PandaLedger_256.png" `
+          --name "PandaLedger" `
+          src/main.py
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/PandaLedger.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
