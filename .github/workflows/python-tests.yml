@@ -53,8 +53,8 @@ jobs:
       - name: Build Executable
         run: |
           pyinstaller --noconfirm --onefile --windowed `
-          --add-data "assests;assests" `
-          --icon "assests/PandaLedger_256.png" `
+          --add-data "assets;assets" `
+          --icon "assets/PandaLedger_256.png" `
           --name "PandaLedger" `
           src/main.py
       - name: Release
