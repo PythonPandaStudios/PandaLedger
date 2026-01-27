@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QScrollArea, QFrame, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QComboBox, QMessageBox, QGridLayout,
                                QTabWidget, QFormLayout, QSplashScreen, QProgressBar)
-from PySide6.QtCore import Qt, QRect, Signal
+from PySide6.QtCore import Qt, QRect, Signal, QStandardPaths
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPixmap, QPainter, QIcon
 
 # Internal Imports
@@ -24,13 +24,23 @@ import ctypes
 if getattr(sys, 'frozen', False):
     APP_DIR = os.path.dirname(sys.executable)
     BASE_PATH = sys._MEIPASS
-    ASSET_DIR = os.path.join(BASE_PATH, "assests")
+    # Fixed typo: 'assests' -> 'assets'
+    ASSET_DIR = os.path.join(BASE_PATH, "assets")
 else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
     BASE_PATH = os.path.dirname(APP_DIR)
-    ASSET_DIR = os.path.join(BASE_PATH, "assests")
+    # Fixed typo: 'assests' -> 'assets'
+    ASSET_DIR = os.path.join(BASE_PATH, "assets")
 
-DB_FILE = os.path.join(APP_DIR, "budget_data.db")
+# CRITICAL FIX: Store database in user's AppData/Home folder
+# This prevents crashes when the app is installed in read-only directories (like Program Files)
+user_data_path = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+DATA_DIR = os.path.join(user_data_path, "PythonPandaStudios", "PandaLedger")
+
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+DB_FILE = os.path.join(DATA_DIR, "budget_data.db")
 ICON_PATH = os.path.join(ASSET_DIR, "PandaLedger_256.png")
 
 class DeductionRow(QWidget):
@@ -132,7 +142,7 @@ class BudgetApp(QMainWindow):
                 cursor.execute('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL)')
                 cursor.execute('CREATE TABLE IF NOT EXISTS deductions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, is_percent INTEGER, is_pre_tax INTEGER)')
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Could not initialize database: {e}")
+            QMessageBox.critical(self, "Database Error", f"Could not initialize database at {DB_FILE}:\n{e}")
 
     def load_settings(self):
         defaults = {
@@ -158,8 +168,8 @@ class BudgetApp(QMainWindow):
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
-        except sqlite3.Error as e:
-            print(f"Error saving setting {key}: {e}")
+        except sqlite3.Error:
+            pass # Silently fail on settings save to avoid spamming user
 
     def apply_theme(self, theme_name):
         self.current_config["theme"] = theme_name
@@ -433,8 +443,8 @@ class BudgetApp(QMainWindow):
                     net_l.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); net_v.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); net_v.setAlignment(Qt.AlignRight)
                     grid.addWidget(net_l, row_idx, 0); grid.addWidget(net_v, row_idx, 1); row_idx += 1
                     grid.addWidget(QLabel(""), row_idx, 0); row_idx += 1 
-        except Exception as e:
-            print(f"Recalculation error: {e}")
+        except Exception:
+            pass # Suppress math errors in background thread to prevent GUI lockup
 
     def load_data(self):
         try:

@@ -1,3 +1,4 @@
+import datetime
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QComboBox, 
                                QLineEdit, QDialogButtonBox, QLabel, QWidget, QMessageBox)
 from PySide6.QtGui import QDoubleValidator, QCloseEvent
@@ -85,7 +86,9 @@ class PayrollSettingsDialog(QDialog):
             self.schedule_params_layout.addRow("Second Period End (Day):", self.p2_end)
             self.schedule_params_layout.addRow("Second Pay Day (Date):", self.pay2)
         elif sched == "Bi-Weekly":
-            self.bw_start = QLineEdit(self.config.get('bw_start', "2026-01-02"))
+            current_year = datetime.date.today().year
+            default_start = f"{current_year}-01-02"
+            self.bw_start = QLineEdit(self.config.get('bw_start', default_start))
             self.schedule_params_layout.addRow("First Pay Date of Year:", self.bw_start)
         elif sched == "Monthly":
             self.m_day = QLineEdit(str(self.config.get('m_day', "1")))
