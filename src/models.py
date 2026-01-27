@@ -91,17 +91,14 @@ class PayrollCalculator:
             p1_pay_day = int(config.get('sm_pay1', 22))
             p2_pay_day = int(config.get('sm_pay2', 7))
 
-            # Include Dec of previous year to catch the Jan 7th payment of the current year
             months_to_calc = [(year - 1, 12)] + [(year, m) for m in range(1, 13)]
             
             for y, m in months_to_calc:
-                # Period 1
                 p1_pay = date(y, m, p1_pay_day)
                 if p1_pay.year == year:
                     p1_hours = self.get_work_hours(date(y, m, 1), date(y, m, p1_end_day))
                     temp_dates.append({'date': p1_pay, 'hours': p1_hours})
 
-                # Period 2
                 last_day = calendar.monthrange(y, m)[1]
                 pay_year, pay_month = (y, m + 1) if m < 12 else (y + 1, 1)
                 p2_pay = date(pay_year, pay_month, p2_pay_day)
@@ -118,9 +115,11 @@ class PayrollCalculator:
         num_periods = len(temp_dates)
         for item in temp_dates:
             if income_type == "Salary":
+                # FIX: Calculate exact period gross first, then derive rate for UI only
                 period_gross = rate / num_periods if num_periods > 0 else 0
                 eff_rate = period_gross / item['hours'] if item['hours'] > 0 else 0
-                schedule.append({'date': item['date'], 'hours': item['hours'], 'rate': round(eff_rate, 2)})
+                # We store the exact calculated rate for math consistency in the UI
+                schedule.append({'date': item['date'], 'hours': item['hours'], 'rate': eff_rate})
             else:
                 schedule.append({'date': item['date'], 'hours': item['hours'], 'rate': rate})
 
