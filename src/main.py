@@ -20,13 +20,17 @@ from payroll_settings_dialog import PayrollSettingsDialog
 
 import ctypes
 
-# Use this to find the directory of the actual executable or script
+# Updated Asset and App directory logic for PyInstaller compatibility
 if getattr(sys, 'frozen', False):
+    # If the app is compiled (frozen), the assets are extracted to sys._MEIPASS
     APP_DIR = os.path.dirname(sys.executable)
-    ASSET_DIR = os.path.join(sys._MEIPASS, "assests") if hasattr(sys, '_MEIPASS') else os.path.join(APP_DIR, "assests")
+    BASE_PATH = sys._MEIPASS
+    ASSET_DIR = os.path.join(BASE_PATH, "assests")
 else:
+    # If running in a standard dev environment
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
-    ASSET_DIR = os.path.join(os.path.dirname(APP_DIR), "assests")
+    BASE_PATH = os.path.dirname(APP_DIR)
+    ASSET_DIR = os.path.join(BASE_PATH, "assests")
 
 DB_FILE = os.path.join(APP_DIR, "budget_data.db")
 ICON_PATH = os.path.join(ASSET_DIR, "PandaLedger_256.png")
