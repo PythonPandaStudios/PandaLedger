@@ -108,7 +108,6 @@ class BudgetApp(QMainWindow):
         self.setWindowTitle("Panda Ledger")
         self.resize(1350, 900)
         
-        # Ensure the window itself has the icon
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
         
@@ -124,23 +123,48 @@ class BudgetApp(QMainWindow):
         self.load_data()
 
     def init_db(self):
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)')
-            cursor.execute('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL)')
-            cursor.execute('CREATE TABLE IF NOT EXISTS deductions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, is_percent INTEGER, is_pre_tax INTEGER)')
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.cursor()
+                cursor.execute('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)')
+                cursor.execute('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL)')
+                cursor.execute('CREATE TABLE IF NOT EXISTS deductions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, is_percent INTEGER, is_pre_tax INTEGER)')
+        except sqlite3.Error as e:
+            print(f"Database Initialization Error: {e}")
 
     def load_settings(self):
+        # Default fallback values for V0.1.0
+        defaults = {
+            "schedule": "Semi-Monthly",
+            "income_type": "Hourly",
+            "rate": 45.78,
+            "theme": "Light",
+            "fed_rate": 12.0,
+            "state_rate": 4.4,
+            "add_tax_rate": 0.45,
+            "state": "Colorado",
+            "sm_p1_end": "15",
+            "sm_pay1": "22",
+            "sm_p2_end": "31",
+            "sm_pay2": "7"
+        }
+
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM config")
-            self.current_config = {r[0]: r[1] for r in cursor.fetchall()}
+            db_settings = {r[0]: r[1] for r in cursor.fetchall()}
         
-        for k in ['rate', 'state_rate', 'fed_rate', 'add_tax_rate']:
-            if k in self.current_config: self.current_config[k] = float(self.current_config[k])
+        # Merge DB settings into defaults
+        self.current_config = defaults.copy()
+        self.current_config.update(db_settings)
         
-        if not self.current_config:
-            self.current_config = {"schedule": "Semi-Monthly", "rate": 45.78, "theme": "Light", "fed_rate": 12.0, "state_rate": 4.4, "add_tax_rate": 0.45}
+        # Ensure numeric conversion for required keys
+        numeric_keys = ['rate', 'state_rate', 'fed_rate', 'add_tax_rate']
+        for k in numeric_keys:
+            try:
+                self.current_config[k] = float(self.current_config[k])
+            except (ValueError, TypeError):
+                self.current_config[k] = defaults[k]
 
     def save_setting(self, key, value):
         with sqlite3.connect(DB_FILE) as conn:
@@ -332,7 +356,6 @@ class BudgetApp(QMainWindow):
         self.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
         deductions = [self.ded_layout.itemAt(i).widget().get_values() for i in range(self.ded_layout.count())]
         
-        # Fetch and sort pay schedule by date to ensure proper ordering in the UI
         pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
         pay_schedule.sort(key=lambda x: x['date'])
         
@@ -361,11 +384,8 @@ class BudgetApp(QMainWindow):
             self.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
             self.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
             
-            # Determine correct month index for the month tabs
             m_idx = check['date'].month - 1
-            if check['date'].year > self.current_year: 
-                # If the pay date rolls into the next year (e.g., Jan 7th), assign to January tab
-                m_idx = 0 
+            if check['date'].year > self.current_year: m_idx = 0 
             monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
             
         for child in self.card_gross.findChildren(QLabel):
@@ -415,12 +435,15 @@ class BudgetApp(QMainWindow):
                 grid.addWidget(QLabel(""), row_idx, 0); row_idx += 1 
 
     def load_data(self):
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name, amount, is_percent, is_pre_tax FROM deductions")
-            for r in cursor.fetchall(): self.add_deduction_ui(r[0], r[1], r[2], bool(r[3]), bool(r[4]))
-            cursor.execute("SELECT id, name, amount FROM expenses")
-            for r in cursor.fetchall(): self.add_expense_ui(r[0], r[1], r[2])
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name, amount, is_percent, is_pre_tax FROM deductions")
+                for r in cursor.fetchall(): self.add_deduction_ui(r[0], r[1], r[2], bool(r[3]), bool(r[4]))
+                cursor.execute("SELECT id, name, amount FROM expenses")
+                for r in cursor.fetchall(): self.add_expense_ui(r[0], r[1], r[2])
+        except sqlite3.Error as e:
+            print(f"Data Load Error: {e}")
 
     def export_to_clipboard(self):
         output = "Date\tHrs\tRate\tGross\tNet\tRemaining\n"
@@ -454,18 +477,13 @@ def show_splash(theme_palette):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
-    # 1. CRITICAL: Set application identity for OS Dock/Taskbar
     app.setApplicationName("Panda Ledger")
     app.setOrganizationName("Python Panda Studios")
     
-    # 2. CRITICAL: Global App Icon (Fixes Dock/Taskbar icons)
     if os.path.exists(ICON_PATH):
         app_icon = QIcon(ICON_PATH)
         app.setWindowIcon(app_icon)
 
-
-    # Windows-specific grouping fix
     if sys.platform == 'win32':
         myappid = 'pythonpandastudios.pandaledger.1.0'
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)

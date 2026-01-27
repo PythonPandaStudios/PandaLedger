@@ -30,11 +30,18 @@ class PayrollCalculator:
         self.rate_ss = 0.062        # Social Security (6.2%)
         self.rate_medicare = 0.0145 # Medicare (1.45%)
         
+    def _safe_float(self, value, default=0.0):
+        """Internal helper to safely convert values from config/DB to floats."""
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+
     def calculate_taxes(self, gross: float, taxable_income: float, config: Dict) -> TaxResult:
         """Performs tax calculations based on configuration rates."""
-        fed_rate = float(config.get('fed_rate', 0))
-        state_rate = float(config.get('state_rate', 0))
-        add_tax_rate = float(config.get('add_tax_rate', 0))
+        fed_rate = self._safe_float(config.get('fed_rate', 0))
+        state_rate = self._safe_float(config.get('state_rate', 0))
+        add_tax_rate = self._safe_float(config.get('add_tax_rate', 0))
 
         t_fed = taxable_income * (fed_rate / 100.0)
         t_state = taxable_income * (state_rate / 100.0)
@@ -58,7 +65,7 @@ class PayrollCalculator:
     def calculate_pay_dates(self, config: Dict, year: int) -> List[Dict]:
         """Generates the full year pay schedule based on config."""
         temp_dates = []
-        rate = float(config.get('rate', 0))
+        rate = self._safe_float(config.get('rate', 0))
         sched_type = config.get('schedule', "Semi-Monthly")
         income_type = config.get('income_type', "Hourly")
 
