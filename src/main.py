@@ -169,7 +169,7 @@ class BudgetApp(QMainWindow):
         header.setFixedHeight(80)
         h_layout = QHBoxLayout(header)
         title_box = QVBoxLayout()
-        title_box.addWidget(QLabel("PandaLedger", objectName="HeaderTitle"))
+        title_box.addWidget(QLabel("Panda Ledger", objectName="HeaderTitle"))
         self.subtitle = QLabel("", objectName="HeaderSubtitle")
         title_box.addWidget(self.subtitle)
         
@@ -447,13 +447,16 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     # 1. CRITICAL: Set application identity for OS Dock/Taskbar
-    app.setApplicationName("Panda Ledger")
-    app.setOrganizationName("Python Panda Studios")
+    app_name = "PandaLedger"
+    app.setApplicationName(app_name)
+    app.setOrganizationName("PythonPandaStudios")
+    app.setProperty("desktopFileName", app_name)
     
     # 2. CRITICAL: Global App Icon (Fixes Dock/Taskbar icons)
     if os.path.exists(ICON_PATH):
         app_icon = QIcon(ICON_PATH)
         app.setWindowIcon(app_icon)
+        QApplication.setWindowIcon(app_icon)
 
 
     # Windows-specific grouping fix
