@@ -1,7 +1,7 @@
 import enum
 from sqlalchemy import Column, Integer, String, Float, Enum, Date, ForeignKey
 from sqlalchemy.orm import relationship
-from database import Base
+from models.database import Base
 
 class AccountType(enum.Enum):
     CHECKING = "Checking"
