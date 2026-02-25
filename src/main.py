@@ -496,7 +496,7 @@ if __name__ == "__main__":
         saved_theme = row[0] if row else "Light"
         
     splash = show_splash(THEMES[saved_theme].palette)
-    window = BudgetApp()g
+    window = BudgetApp()
     splash.finish(window)
     window.show()
     sys.exit(app.exec())
