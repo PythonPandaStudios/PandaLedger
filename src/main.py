@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QScrollArea, QFrame, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QComboBox, QMessageBox, QGridLayout,
-                               QTabWidget, QFormLayout, QSplashScreen, QProgressBar)
+                               QTabWidget, QFormLayout, QSplashScreen, QProgressBar,
+                               QTableView)
 from PySide6.QtCore import Qt, QRect, Signal, QStandardPaths
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPixmap, QPainter, QIcon
 
@@ -18,19 +19,17 @@ from theme_manager import THEMES
 from payroll_settings_dialog import PayrollSettingsDialog
 from payroll import PayrollCalculator, TaxResult, PaycheckResult
 from database import init_db as init_sqlalchemy_db, DB_FILE
-
+from transaction_model import TransactionModel
 import ctypes
 
 # Updated Asset and App directory logic for PyInstaller compatibility
 if getattr(sys, 'frozen', False):
     APP_DIR = os.path.dirname(sys.executable)
     BASE_PATH = sys._MEIPASS
-    # Fixed typo: 'assests' -> 'assets'
     ASSET_DIR = os.path.join(BASE_PATH, "assets")
 else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
     BASE_PATH = os.path.dirname(APP_DIR)
-    # Fixed typo: 'assests' -> 'assets'
     ASSET_DIR = os.path.join(BASE_PATH, "assets")
 
 ICON_PATH = os.path.join(ASSET_DIR, "PandaLedger_256.png")
@@ -249,11 +248,45 @@ class BudgetApp(QMainWindow):
 
         self.tabs = QTabWidget()
         self.setup_year_tab()
+        
+        # INSERTING THE NEW LEDGER TAB HERE
+        self.setup_ledger_tab()
+        
         self.month_names = list(calendar.month_name)[1:]
         for i in range(12): self.setup_month_tab(i)
         
         content.addWidget(self.tabs)
         main_layout.addLayout(content)
+
+    def setup_ledger_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # Dummy Data per Acceptance Criteria
+        dummy_data = [
+            [datetime.date(2026, 2, 1), "Landlord LLC", "Rent/Mortgage", -1500.00, "February Rent"],
+            [datetime.date(2026, 2, 5), "Comcast", "Internet/Cable Bill", -100.00, "High speed internet"],
+            [datetime.date(2026, 2, 7), "Verizon", "Cell Phone", -80.00, "Unlimited plan"],
+            [datetime.date(2026, 2, 10), "Ford Motor Credit", "Car Payment", -350.00, "Mustang loan"],
+            [datetime.date(2026, 2, 15), "Employer Inc", "Paycheck", 3000.00, "Mid-month pay"]
+        ]
+        
+        # Setup MVC Model & View
+        self.transaction_model = TransactionModel(dummy_data)
+        self.ledger_view = QTableView()
+        self.ledger_view.setModel(self.transaction_model)
+        
+        # Configure Table Appearance & Sorting
+        self.ledger_view.setSortingEnabled(True) # Enables clicking headers to sort
+        self.ledger_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.ledger_view.verticalHeader().setVisible(False)
+        self.ledger_view.setAlternatingRowColors(True)
+        
+        layout.addWidget(self.ledger_view)
+        
+        # Insert as the very first tab and set it as active
+        self.tabs.insertTab(0, tab, "Ledger")
+        self.tabs.setCurrentIndex(0)
 
     def setup_year_tab(self):
         tab = QWidget()

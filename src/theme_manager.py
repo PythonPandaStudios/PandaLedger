@@ -98,11 +98,11 @@ QPushButton#CopyButton:hover { background-color: #047857; }
 QPushButton#DeleteButton { background-color: #EF4444; color: white; border: none; }
 
 /* TABLES & HEADERS */
-QTableWidget { background-color: #FFFFFF; border: 1px solid #E5E7EB; gridline-color: #E5E7EB; color: #374151; alternate-background-color: #F9FAFB; }
+QTableWidget, QTableView { background-color: #FFFFFF; border: 1px solid #E5E7EB; gridline-color: #E5E7EB; color: #374151; alternate-background-color: #F9FAFB; selection-background-color: #3B82F6; selection-color: #FFFFFF; }
 /* Fix for dark vertical headers */
 QHeaderView { background-color: #F3F4F6; }
-QHeaderView::section { background-color: #F3F4F6; color: #1F2937; border: 1px solid #E5E7EB; padding: 4px; }
-QTableCornerButton::section { background-color: #F3F4F6; border: 1px solid #E5E7EB; }
+QHeaderView::section { background-color: #F3F4F6; color: #1F2937; border: 1px solid #E5E7EB; padding: 6px; font-weight: bold; }
+QTableCornerButton::section, QTableView QTableCornerButton::section { background-color: #F3F4F6; border: 1px solid #E5E7EB; }
 
 /* CARDS */
 QFrame#StatCard { background-color: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 8px; }
@@ -203,11 +203,11 @@ QPushButton#CopyButton:hover { background-color: #047857; }
 QPushButton#DeleteButton { background-color: #EF4444; color: white; border: none; }
 
 /* TABLES & HEADERS */
-QTableWidget { background-color: #1F2937; border: 1px solid #4B5563; gridline-color: #4B5563; color: #E5E7EB; alternate-background-color: #111827; }
+QTableWidget, QTableView { background-color: #1F2937; border: 1px solid #4B5563; gridline-color: #4B5563; color: #E5E7EB; alternate-background-color: #111827; selection-background-color: #3B82F6; selection-color: #FFFFFF; }
 /* Fix for vertical headers */
 QHeaderView { background-color: #111827; }
-QHeaderView::section { background-color: #111827; color: #E5E7EB; border: 1px solid #4B5563; padding: 4px; }
-QTableCornerButton::section { background-color: #111827; border: 1px solid #4B5563; }
+QHeaderView::section { background-color: #111827; color: #E5E7EB; border: 1px solid #4B5563; padding: 6px; font-weight: bold; }
+QTableCornerButton::section, QTableView QTableCornerButton::section { background-color: #111827; border: 1px solid #4B5563; }
 
 /* CARDS */
 QFrame#StatCard { background-color: #1F2937; border: 1px solid #374151; border-radius: 8px; }
