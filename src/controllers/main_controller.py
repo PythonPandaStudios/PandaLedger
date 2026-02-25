@@ -1,6 +1,8 @@
 import datetime
 import sqlite3
-from PySide6.QtWidgets import QTableWidgetItem, QMessageBox
+from PySide6.QtWidgets import (QTableWidgetItem, QMessageBox, QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                               QHBoxLayout, QLabel, QLineEdit, QPushButton, 
+                               QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QMessageBox)
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtCore import Qt
 
@@ -9,13 +11,12 @@ from views.main_window import MainWindowView
 from views.components import DeductionRow, ExpenseRow
 from views.dialogs import PayrollSettingsDialog
 from views.theme_manager import THEMES
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                               QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QMessageBox)
 
 # Import our Models
 from models.payroll import PayrollCalculator
-from models.database import init_db as init_sqlalchemy_db, DB_FILE
+from models.database import init_db as init_sqlalchemy_db, DB_FILE, SessionLocal
+from models.schema import Account, Category, Transaction, AccountType, CategoryType
+from models.qt_models import TransactionModel
 
 class MainController:
     """The Controller connects the View (GUI) to the Models (Data/Logic)."""
@@ -26,6 +27,7 @@ class MainController:
         self.current_config = {}
         
         self.init_db()
+        self.seed_test_data() # Add dummy data if the DB is empty
         self.load_settings()
 
         # 2. Initialize View
@@ -35,6 +37,7 @@ class MainController:
         # 3. Apply Initial State
         self.change_theme(self.current_config.get("theme", "Light"))
         self.load_data()
+        self.load_transactions() # Fetch and display SQLAlchemy data
 
     def init_db(self):
         init_sqlalchemy_db()
@@ -46,6 +49,45 @@ class MainController:
                 cursor.execute('CREATE TABLE IF NOT EXISTS deductions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, is_percent INTEGER, is_pre_tax INTEGER)')
         except sqlite3.Error as e:
             print(f"Database Error: {e}")
+
+    def seed_test_data(self):
+        """Seeds the database with initial test data if it is empty."""
+        with SessionLocal() as session:
+            # Check if we already have transactions so we don't duplicate them
+            if session.query(Transaction).count() == 0:
+                # 1. Create a default account and some categories
+                checking = Account(name="Main Checking", type=AccountType.CHECKING, current_balance=5000.0)
+                housing = Category(name="Rent/Mortgage", type=CategoryType.FIXED, monthly_limit=2000.0)
+                salary = Category(name="Income", type=CategoryType.SAVINGS, monthly_limit=0.0)
+
+                session.add_all([checking, housing, salary])
+                session.commit()
+
+                # 2. Add dummy transactions tied to those accounts/categories
+                t1 = Transaction(date=datetime.date(2026, 2, 1), payee="Landlord LLC", amount=-1500.00, notes="February Rent", account_id=checking.id, category_id=housing.id)
+                t2 = Transaction(date=datetime.date(2026, 2, 15), payee="Employer Inc", amount=3000.00, notes="Mid-month pay", account_id=checking.id, category_id=salary.id)
+
+                session.add_all([t1, t2])
+                session.commit()
+
+    def load_transactions(self):
+        """Fetches transactions from SQLAlchemy and binds them to the View's table."""
+        with SessionLocal() as session:
+            # Fetch all transactions from the database
+            db_transactions = session.query(Transaction).all()
+            
+            # Format them into the List of Lists expected by our TransactionModel
+            table_data = []
+            for t in db_transactions:
+                # Safely get the category name via the SQLAlchemy relationship
+                category_name = t.category.name if t.category else "Uncategorized"
+                
+                # Order matters here: [Date, Payee, Category, Amount, Notes]
+                table_data.append([t.date, t.payee, category_name, t.amount, t.notes])
+            
+            # Create the model and apply it to the view
+            self.transaction_model = TransactionModel(table_data)
+            self.view.ledger_view.setModel(self.transaction_model)
 
     def load_settings(self):
         defaults = {
@@ -105,13 +147,10 @@ class MainController:
                     db_id = cursor.lastrowid
             except sqlite3.Error: return
         
-        # Instantiate the View Component
         row = DeductionRow(db_id, name, amount, is_pct, is_pre)
-        # Connect the Component's signals back to the Controller
         row.dataChanged.connect(self.sync_deduction)
         row.deleted.connect(self.delete_deduction)
         
-        # Inject it into the View
         self.view.ded_layout.addWidget(row)
         self.recalculate_budget()
 
@@ -218,7 +257,6 @@ class MainController:
                 if check['date'].year > self.current_year: m_idx = 0 
                 monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
                 
-            # Update Stat Cards
             for child in self.view.card_gross.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
             for child in self.view.card_net.findChildren(QLabel):
@@ -226,7 +264,6 @@ class MainController:
             for child in self.view.card_savings.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_net - (total_exp * 12):,.2f}")
                 
-            # Update Month Tabs
             for m_idx, ref in enumerate(self.view.month_tabs_refs):
                 checks = monthly_data[m_idx]
                 ref['table'].setRowCount(0)
