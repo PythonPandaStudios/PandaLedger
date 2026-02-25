@@ -1,4 +1,16 @@
+altgraph==0.17.5
+asarPy==1.0.1
+iniconfig==2.3.0
+packaging==26.0
+pluggy==1.6.0
+Pygments==2.19.2
+pyinstaller==6.18.0
+pyinstaller-hooks-contrib==2026.0
 PySide6==6.10.1
 PySide6_Addons==6.10.1
 PySide6_Essentials==6.10.1
+pytest==9.0.2
+setuptools==80.10.2
 shiboken6==6.10.1
+SQLAlchemy>=2.0.0
+

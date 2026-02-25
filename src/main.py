@@ -15,8 +15,9 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QPixmap, QPainter, QIc
 
 # Internal Imports
 from theme_manager import THEMES
-from models import PayrollCalculator, TaxResult, PaycheckResult
 from payroll_settings_dialog import PayrollSettingsDialog
+from payroll import PayrollCalculator, TaxResult, PaycheckResult
+from database import init_db as init_sqlalchemy_db, DB_FILE
 
 import ctypes
 
@@ -32,15 +33,6 @@ else:
     # Fixed typo: 'assests' -> 'assets'
     ASSET_DIR = os.path.join(BASE_PATH, "assets")
 
-# CRITICAL FIX: Store database in user's AppData/Home folder
-# This prevents crashes when the app is installed in read-only directories (like Program Files)
-user_data_path = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
-DATA_DIR = os.path.join(user_data_path, "PythonPandaStudios", "PandaLedger")
-
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
-
-DB_FILE = os.path.join(DATA_DIR, "budget_data.db")
 ICON_PATH = os.path.join(ASSET_DIR, "PandaLedger_256.png")
 
 class DeductionRow(QWidget):
@@ -135,6 +127,11 @@ class BudgetApp(QMainWindow):
         self.load_data()
 
     def init_db(self):
+        # 1. Initialize our new SQLAlchemy tables (Account, Category, Transaction)
+        init_sqlalchemy_db()
+        
+        # 2. Keep the legacy raw SQLite tables for now so the UI continues to work 
+        # until we fully migrate the Expenses/Deductions/Config to SQLAlchemy.
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 cursor = conn.cursor()
@@ -142,7 +139,7 @@ class BudgetApp(QMainWindow):
                 cursor.execute('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL)')
                 cursor.execute('CREATE TABLE IF NOT EXISTS deductions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, is_percent INTEGER, is_pre_tax INTEGER)')
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Could not initialize database at {DB_FILE}:\n{e}")
+            QMessageBox.critical(self, "Database Error", f"Could not initialize legacy database at {DB_FILE}:\n{e}")
 
     def load_settings(self):
         defaults = {
@@ -490,14 +487,16 @@ if __name__ == "__main__":
     if os.path.exists(ICON_PATH): app.setWindowIcon(QIcon(ICON_PATH))
     if sys.platform == 'win32':
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('pythonpandastudios.pandaledger.1.0')
+    
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
         cursor.execute("SELECT value FROM config WHERE key='theme'")
         row = cursor.fetchone()
         saved_theme = row[0] if row else "Light"
+        
     splash = show_splash(THEMES[saved_theme].palette)
-    window = BudgetApp()
+    window = BudgetApp()g
     splash.finish(window)
     window.show()
     sys.exit(app.exec())
