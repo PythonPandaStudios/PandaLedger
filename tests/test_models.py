@@ -1,6 +1,6 @@
 import pytest
 from datetime import date
-from src.models import PayrollCalculator
+from src.payroll import PayrollCalculator
 
 @pytest.fixture
 def calculator():
