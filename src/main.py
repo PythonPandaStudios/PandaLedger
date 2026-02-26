@@ -53,6 +53,8 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("Panda Ledger")
     app.setOrganizationName("Python Panda Studios")
+
+    print(f"DATABASE LOCATION: {DB_FILE}")
     
     if os.path.exists(ICON_PATH): 
         app.setWindowIcon(QIcon(ICON_PATH))

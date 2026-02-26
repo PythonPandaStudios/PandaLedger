@@ -1,6 +1,6 @@
 import datetime
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QComboBox, 
-                               QLineEdit, QDialogButtonBox, QLabel, QWidget, QMessageBox)
+                               QLineEdit, QDialogButtonBox, QLabel, QWidget, QMessageBox, QScrollArea, QPushButton, QHBoxLayout)
 from PySide6.QtGui import QDoubleValidator, QCloseEvent
 from PySide6.QtCore import Qt
 
@@ -151,3 +151,118 @@ class PayrollSettingsDialog(QDialog):
 
     def get_data(self):
         return self.get_current_ui_data()
+
+class ManageDeductionsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Payroll Deductions")
+        self.resize(500, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Scroll area to hold the rows, similar to the old sidebar
+        self.scroll_area = QScrollArea(widgetResizable=True)
+        self.container = QWidget()
+        self.row_layout = QVBoxLayout(self.container)
+        self.row_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.container)
+        
+        layout.addWidget(self.scroll_area)
+        
+        # Bottom Buttons
+        btn_layout = QHBoxLayout()
+        self.add_btn = QPushButton("+ Add Deduction")
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.close_btn)
+        
+        layout.addLayout(btn_layout)
+
+class ManageExpensesDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Monthly Expenses")
+        self.resize(550, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        self.scroll_area = QScrollArea(widgetResizable=True)
+        self.container = QWidget()
+        self.row_layout = QVBoxLayout(self.container)
+        self.row_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.container)
+        
+        layout.addWidget(self.scroll_area)
+        
+        btn_layout = QHBoxLayout()
+        self.add_btn = QPushButton("+ Add Expense")
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.close_btn)
+        
+        layout.addLayout(btn_layout)
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QScrollArea, QWidget, QLabel
+from PySide6.QtCore import Qt
+
+class ManageDeductionsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Payroll Deductions")
+        self.resize(500, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Scroll area to hold the rows, similar to the old sidebar
+        self.scroll_area = QScrollArea(widgetResizable=True)
+        self.container = QWidget()
+        self.row_layout = QVBoxLayout(self.container)
+        self.row_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.container)
+        
+        layout.addWidget(self.scroll_area)
+        
+        # Bottom Buttons
+        btn_layout = QHBoxLayout()
+        self.add_btn = QPushButton("+ Add Deduction")
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.close_btn)
+        
+        layout.addLayout(btn_layout)
+
+class ManageExpensesDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Monthly Expenses")
+        self.resize(550, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        self.scroll_area = QScrollArea(widgetResizable=True)
+        self.container = QWidget()
+        self.row_layout = QVBoxLayout(self.container)
+        self.row_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.container)
+        
+        layout.addWidget(self.scroll_area)
+        
+        btn_layout = QHBoxLayout()
+        self.add_btn = QPushButton("+ Add Expense")
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.close_btn)
+        
+        layout.addLayout(btn_layout)

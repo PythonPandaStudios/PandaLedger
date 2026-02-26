@@ -1,7 +1,7 @@
-import enum
-from sqlalchemy import Column, Integer, String, Float, Enum, Date, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Boolean, Date, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from models.database import Base
+import enum
 
 class AccountType(enum.Enum):
     CHECKING = "Checking"
@@ -56,3 +56,24 @@ class Transaction(Base):
     # Relationships
     account = relationship("Account", back_populates="transactions")
     category = relationship("Category", back_populates="transactions")
+
+class Config(Base):
+    __tablename__ = "config"
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String)
+
+class Deduction(Base):
+    __tablename__ = "deductions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, default="New")
+    amount = Column(Float, default=0.0)
+    is_percent = Column(Boolean, default=False)
+    is_pre_tax = Column(Boolean, default=True)
+
+class Expense(Base):
+    __tablename__ = "expenses"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, default="New")
+    amount = Column(Float, default=0.0)
+    is_global = Column(Boolean, default=True)
+    month_idx = Column(Integer, default=-1)

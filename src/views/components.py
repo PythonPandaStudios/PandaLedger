@@ -1,3 +1,4 @@
+import calendar
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QComboBox, QPushButton
 from PySide6.QtCore import Signal
 
@@ -62,23 +63,39 @@ class ExpenseRow(QWidget):
     dataChanged = Signal(dict)
     deleted = Signal(int)
 
-    def __init__(self, db_id, name, amount):
+    def __init__(self, db_id, name, amount, is_global=True, month_idx=-1):
         super().__init__()
         self.db_id = db_id
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 2, 10, 2)
+        
         self.name_input = QLineEdit(name)
         self.amount_input = QLineEdit(str(amount) if amount != 0 else "")
         self.amount_input.setFixedWidth(80)
+        
+        # New: Dropdown to select Global or a specific month
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItem("Global (All)")
+        self.scope_combo.addItems(list(calendar.month_name)[1:]) # Adds Jan through Dec
+        
+        # Set the initial selection based on the database data
+        if is_global:
+            self.scope_combo.setCurrentIndex(0)
+        else:
+            self.scope_combo.setCurrentIndex(month_idx + 1) # +1 because Index 0 is "Global"
+            
         self.del_btn = QPushButton("×")
         self.del_btn.setObjectName("DeleteButton")
         self.del_btn.setFixedSize(24, 24)
 
-        layout.addWidget(self.name_input, 1)
-        layout.addWidget(self.amount_input, 0)
+        layout.addWidget(self.name_input, 2)
+        layout.addWidget(self.amount_input, 1)
+        layout.addWidget(self.scope_combo, 1) # Add combo box to layout
         layout.addWidget(self.del_btn, 0)
 
         self.name_input.textChanged.connect(self.emit_changed)
         self.amount_input.textChanged.connect(self.emit_changed)
+        self.scope_combo.currentIndexChanged.connect(self.emit_changed)
         self.del_btn.clicked.connect(lambda: self.deleted.emit(self.db_id))
 
     def emit_changed(self):
@@ -89,4 +106,16 @@ class ExpenseRow(QWidget):
             val = float(self.amount_input.text())
         except ValueError:
             val = 0.0
-        return {'id': self.db_id, 'name': self.name_input.text(), 'amount': val}
+            
+        # Determine global status and month index based on dropdown choice
+        idx = self.scope_combo.currentIndex()
+        is_global = (idx == 0)
+        month_idx = idx - 1 if not is_global else -1
+
+        return {
+            'id': self.db_id, 
+            'name': self.name_input.text(), 
+            'amount': val,
+            'is_global': is_global,
+            'month_idx': month_idx
+        }

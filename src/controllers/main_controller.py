@@ -1,93 +1,68 @@
 import datetime
-import sqlite3
 from PySide6.QtWidgets import (QTableWidgetItem, QMessageBox, QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                               QScrollArea, QFrame, QTableWidget, QTableWidgetItem, QMessageBox)
+                               QScrollArea, QFrame, QTableWidget, QTableWidgetItem)
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtCore import Qt
 
-# Import our Views
 from views.main_window import MainWindowView
 from views.components import DeductionRow, ExpenseRow
-from views.dialogs import PayrollSettingsDialog
+from views.dialogs import PayrollSettingsDialog, ManageDeductionsDialog, ManageExpensesDialog
 from views.theme_manager import THEMES
 
-# Import our Models
 from models.payroll import PayrollCalculator
-from models.database import init_db as init_sqlalchemy_db, DB_FILE, SessionLocal
-from models.schema import Account, Category, Transaction, AccountType, CategoryType
+from models.database import init_db as init_sqlalchemy_db, SessionLocal
+from models.schema import Account, Category, Transaction, AccountType, CategoryType, Config, Deduction, Expense
 from models.qt_models import TransactionModel
 
 class MainController:
-    """The Controller connects the View (GUI) to the Models (Data/Logic)."""
     def __init__(self):
-        # 1. Initialize Models
         self.current_year = datetime.date.today().year
         self.calculator = PayrollCalculator()
         self.current_config = {}
         
         self.init_db()
-        self.seed_test_data() # Add dummy data if the DB is empty
+        self.seed_test_data()
         self.load_settings()
 
-        # 2. Initialize View
         self.view = MainWindowView()
+        self.deductions_dialog = ManageDeductionsDialog(self.view)
+        self.expenses_dialog = ManageExpensesDialog(self.view)
+        
         self.connect_signals()
         
-        # 3. Apply Initial State
         self.change_theme(self.current_config.get("theme", "Light"))
         self.load_data()
-        self.load_transactions() # Fetch and display SQLAlchemy data
+        self.load_transactions() 
 
     def init_db(self):
         init_sqlalchemy_db()
-        try:
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                cursor.execute('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)')
-                cursor.execute('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL)')
-                cursor.execute('CREATE TABLE IF NOT EXISTS deductions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, is_percent INTEGER, is_pre_tax INTEGER)')
-        except sqlite3.Error as e:
-            print(f"Database Error: {e}")
 
     def seed_test_data(self):
-        """Seeds the database with initial test data if it is empty."""
         with SessionLocal() as session:
-            # Check if we already have transactions so we don't duplicate them
             if session.query(Transaction).count() == 0:
-                # 1. Create a default account and some categories
                 checking = Account(name="Main Checking", type=AccountType.CHECKING, current_balance=5000.0)
                 housing = Category(name="Rent/Mortgage", type=CategoryType.FIXED, monthly_limit=2000.0)
                 salary = Category(name="Income", type=CategoryType.SAVINGS, monthly_limit=0.0)
-
                 session.add_all([checking, housing, salary])
                 session.commit()
 
-                # 2. Add dummy transactions tied to those accounts/categories
                 t1 = Transaction(date=datetime.date(2026, 2, 1), payee="Landlord LLC", amount=-1500.00, notes="February Rent", account_id=checking.id, category_id=housing.id)
                 t2 = Transaction(date=datetime.date(2026, 2, 15), payee="Employer Inc", amount=3000.00, notes="Mid-month pay", account_id=checking.id, category_id=salary.id)
-
                 session.add_all([t1, t2])
                 session.commit()
 
     def load_transactions(self):
-        """Fetches transactions from SQLAlchemy and binds them to the View's table."""
         with SessionLocal() as session:
-            # Fetch all transactions from the database
             db_transactions = session.query(Transaction).all()
-            
-            # Format them into the List of Lists expected by our TransactionModel
             table_data = []
             for t in db_transactions:
-                # Safely get the category name via the SQLAlchemy relationship
                 category_name = t.category.name if t.category else "Uncategorized"
-                
-                # Order matters here: [Date, Payee, Category, Amount, Notes]
                 table_data.append([t.date, t.payee, category_name, t.amount, t.notes])
-            
-            # Create the model and apply it to the view
             self.transaction_model = TransactionModel(table_data)
-            self.view.ledger_view.setModel(self.transaction_model)
+            
+            for ref in self.view.month_tabs_refs:
+                ref['ledger'].setModel(self.transaction_model)
 
     def load_settings(self):
         defaults = {
@@ -96,35 +71,40 @@ class MainController:
             "state": "Colorado", "sm_p1_end": "15", "sm_pay1": "22", "sm_p2_end": "31", "sm_pay2": "7"
         }
         try:
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT key, value FROM config")
-                db_settings = {r[0]: r[1] for r in cursor.fetchall()}
+            with SessionLocal() as session:
+                db_settings = {c.key: c.value for c in session.query(Config).all()}
             self.current_config = defaults.copy()
             self.current_config.update(db_settings)
+            
             numeric_keys = ['rate', 'state_rate', 'fed_rate', 'add_tax_rate']
             for k in numeric_keys:
                 try: self.current_config[k] = float(self.current_config[k])
                 except (ValueError, TypeError): self.current_config[k] = defaults[k]
-        except sqlite3.Error:
+        except Exception as e:
+            print(f"Settings Load Error: {e}")
             self.current_config = defaults
 
     def save_setting(self, key, value):
-        try:
-            with sqlite3.connect(DB_FILE) as conn:
-                conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
-        except sqlite3.Error: pass
+        with SessionLocal() as session:
+            conf = session.query(Config).filter_by(key=key).first()
+            if conf:
+                conf.value = str(value)
+            else:
+                conf = Config(key=key, value=str(value))
+                session.add(conf)
+            session.commit()
 
-    # --- SIGNAL ROUTING ---
     def connect_signals(self):
-        """Listen to the View's signals and route them to Controller methods."""
         self.view.theme_changed_signal.connect(self.change_theme)
         self.view.open_payroll_settings_signal.connect(self.open_payroll_settings)
-        self.view.add_deduction_signal.connect(lambda: self.add_deduction())
-        self.view.add_expense_signal.connect(lambda: self.add_expense())
         self.view.export_clipboard_signal.connect(self.export_to_clipboard)
+        
+        self.view.manage_deductions_signal.connect(self.deductions_dialog.exec)
+        self.view.manage_expenses_signal.connect(self.expenses_dialog.exec)
+        
+        self.deductions_dialog.add_btn.clicked.connect(lambda: self.add_deduction())
+        self.expenses_dialog.add_btn.clicked.connect(lambda: self.add_expense())
 
-    # --- CONTROLLER LOGIC ---
     def change_theme(self, theme_name):
         self.current_config["theme"] = theme_name
         self.save_setting("theme", theme_name)
@@ -140,93 +120,136 @@ class MainController:
 
     def add_deduction(self, db_id=None, name="New", amount=0, is_pct=False, is_pre=True):
         if db_id is None:
-            try:
-                with sqlite3.connect(DB_FILE) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("INSERT INTO deductions (name, amount, is_percent, is_pre_tax) VALUES (?,?,?,?)", (name, amount, int(is_pct), int(is_pre)))
-                    db_id = cursor.lastrowid
-            except sqlite3.Error: return
+            with SessionLocal() as session:
+                new_ded = Deduction(name=name, amount=amount, is_percent=is_pct, is_pre_tax=is_pre)
+                session.add(new_ded)
+                session.commit()
+                db_id = new_ded.id
         
         row = DeductionRow(db_id, name, amount, is_pct, is_pre)
         row.dataChanged.connect(self.sync_deduction)
         row.deleted.connect(self.delete_deduction)
-        
-        self.view.ded_layout.addWidget(row)
+        self.deductions_dialog.row_layout.addWidget(row)
         self.recalculate_budget()
 
-    def add_expense(self, db_id=None, name="New", amount=0):
+    def add_expense(self, db_id=None, name="New", amount=0, is_global=True, month_idx=-1):
         if db_id is None:
-            try:
-                with sqlite3.connect(DB_FILE) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("INSERT INTO expenses (name, amount) VALUES (?,?)", (name, amount))
-                    db_id = cursor.lastrowid
-            except sqlite3.Error: return
+            with SessionLocal() as session:
+                new_exp = Expense(name=name, amount=amount, is_global=is_global, month_idx=month_idx)
+                session.add(new_exp)
+                session.commit()
+                db_id = new_exp.id
             
-        row = ExpenseRow(db_id, name, amount)
+        row = ExpenseRow(db_id, name, amount, is_global, month_idx)
         row.dataChanged.connect(self.sync_expense)
         row.deleted.connect(self.delete_expense)
-        
-        self.view.exp_layout.addWidget(row)
+        self.expenses_dialog.row_layout.addWidget(row)
         self.recalculate_budget()
 
     def sync_deduction(self, data):
-        try:
-            with sqlite3.connect(DB_FILE) as conn:
-                conn.execute("UPDATE deductions SET name=?, amount=?, is_percent=?, is_pre_tax=? WHERE id=?", 
-                             (data['name'], data['value'], int(data['is_percent']), int(data['is_pre_tax']), data['id']))
-            self.recalculate_budget()
-        except sqlite3.Error: pass
+        with SessionLocal() as session:
+            ded = session.query(Deduction).filter_by(id=data['id']).first()
+            if ded:
+                ded.name = data['name']
+                ded.amount = data['value']
+                ded.is_percent = data['is_percent']
+                ded.is_pre_tax = data['is_pre_tax']
+                session.commit()
+        self.recalculate_budget()
 
     def sync_expense(self, data):
-        try:
-            with sqlite3.connect(DB_FILE) as conn:
-                conn.execute("UPDATE expenses SET name=?, amount=? WHERE id=?", (data['name'], data['amount'], data['id']))
-            self.recalculate_budget()
-        except sqlite3.Error: pass
+        with SessionLocal() as session:
+            exp = session.query(Expense).filter_by(id=data['id']).first()
+            if exp:
+                exp.name = data['name']
+                exp.amount = data['amount']
+                exp.is_global = data['is_global']
+                exp.month_idx = data['month_idx']
+                session.commit()
+        self.recalculate_budget()
 
     def delete_deduction(self, db_id):
-        try:
-            with sqlite3.connect(DB_FILE) as conn: conn.execute("DELETE FROM deductions WHERE id=?", (db_id,))
-            self.view.sender().setParent(None)
-            self.recalculate_budget()
-        except sqlite3.Error: pass
+        # 1. Delete from the Database
+        with SessionLocal() as session:
+            ded = session.query(Deduction).filter_by(id=db_id).first()
+            if ded:
+                session.delete(ded)
+                session.commit()
+                
+        # 2. Safely find and remove the specific row from the Dialog's UI
+        layout = self.deductions_dialog.row_layout
+        for i in range(layout.count()):
+            widget = layout.itemAt(i).widget()
+            if widget and hasattr(widget, 'db_id') and widget.db_id == db_id:
+                widget.setParent(None)
+                widget.deleteLater()
+                break # We found it, no need to keep searching
+                
+        self.recalculate_budget()
 
     def delete_expense(self, db_id):
-        try:
-            with sqlite3.connect(DB_FILE) as conn: conn.execute("DELETE FROM expenses WHERE id=?", (db_id,))
-            self.view.sender().setParent(None)
-            self.recalculate_budget()
-        except sqlite3.Error: pass
+        # 1. Delete from the Database
+        with SessionLocal() as session:
+            exp = session.query(Expense).filter_by(id=db_id).first()
+            if exp:
+                session.delete(exp)
+                session.commit()
+                
+        # 2. Safely find and remove the specific row from the Dialog's UI
+        layout = self.expenses_dialog.row_layout
+        for i in range(layout.count()):
+            widget = layout.itemAt(i).widget()
+            if widget and hasattr(widget, 'db_id') and widget.db_id == db_id:
+                widget.setParent(None)
+                widget.deleteLater()
+                break # We found it, no need to keep searching
+                
+        self.recalculate_budget()
 
     def load_data(self):
-        try:
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, name, amount, is_percent, is_pre_tax FROM deductions")
-                for r in cursor.fetchall(): self.add_deduction(r[0], r[1], r[2], bool(r[3]), bool(r[4]))
-                cursor.execute("SELECT id, name, amount FROM expenses")
-                for r in cursor.fetchall(): self.add_expense(r[0], r[1], r[2])
-        except sqlite3.Error: pass
+        with SessionLocal() as session:
+            deductions = session.query(Deduction).all()
+            for d in deductions: 
+                self.add_deduction(d.id, d.name, d.amount, d.is_percent, d.is_pre_tax)
+                
+            expenses = session.query(Expense).all()
+            for e in expenses: 
+                self.add_expense(e.id, e.name, e.amount, e.is_global, e.month_idx)
 
     def recalculate_budget(self):
         try:
             self.view.subtitle.setText(f"{self.current_config.get('schedule')} | {self.current_config.get('state')} Tax Rules")
             
-            expenses = [self.view.exp_layout.itemAt(i).widget().get_values() for i in range(self.view.exp_layout.count())]
-            total_exp = sum(e['amount'] for e in expenses)
-            self.view.lbl_total_exp.setText(f"Total Monthly: ${total_exp:,.2f}")
+            expenses = [self.expenses_dialog.row_layout.itemAt(i).widget().get_values() for i in range(self.expenses_dialog.row_layout.count())]
+            deductions = [self.deductions_dialog.row_layout.itemAt(i).widget().get_values() for i in range(self.deductions_dialog.row_layout.count())]
             
-            deductions = [self.view.ded_layout.itemAt(i).widget().get_values() for i in range(self.view.ded_layout.count())]
+            # --- NEW MATH: Organize Expenses by Month ---
+            month_expenses = {i: 0 for i in range(12)}
+            for e in expenses:
+                if e['is_global']:
+                    for i in range(12): month_expenses[i] += e['amount']
+                else:
+                    if 0 <= e['month_idx'] <= 11:
+                        month_expenses[e['month_idx']] += e['amount']
             
             pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
             pay_schedule.sort(key=lambda x: x['date'])
+            
+            # Figure out how many checks are in each month to divide expenses accurately per-check
+            checks_per_month = {i: 0 for i in range(12)}
+            for check in pay_schedule:
+                m_idx = check['date'].month - 1
+                if check['date'].year > self.current_year: m_idx = 0 
+                checks_per_month[m_idx] += 1
             
             self.view.year_table.setRowCount(0)
             total_gross, total_net = 0, 0
             monthly_data = {i: [] for i in range(12)}
             
             for check in pay_schedule:
+                m_idx = check['date'].month - 1
+                if check['date'].year > self.current_year: m_idx = 0 
+                
                 gross = check['hours'] * check['rate']
                 check_ded_details = []
                 pre_tax_total, post_tax_total = 0, 0
@@ -239,7 +262,10 @@ class MainController:
                 taxable = max(0, gross - pre_tax_total)
                 taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config)
                 net = gross - pre_tax_total - taxes.total_tax - post_tax_total
-                rem = net - (total_exp / 2)
+                
+                # --- NEW MATH: Apply specific month's expenses ---
+                checks_in_this_month = checks_per_month[m_idx]
+                rem = net - (month_expenses[m_idx] / checks_in_this_month) if checks_in_this_month > 0 else net
                 
                 total_gross += gross
                 total_net += net
@@ -253,8 +279,6 @@ class MainController:
                 self.view.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
                 self.view.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
                 
-                m_idx = check['date'].month - 1
-                if check['date'].year > self.current_year: m_idx = 0 
                 monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
                 
             for child in self.view.card_gross.findChildren(QLabel):
@@ -262,7 +286,9 @@ class MainController:
             for child in self.view.card_net.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
             for child in self.view.card_savings.findChildren(QLabel):
-                if child.objectName() == "StatValue": child.setText(f"${total_net - (total_exp * 12):,.2f}")
+                if child.objectName() == "StatValue": 
+                    annual_exp_total = sum(month_expenses.values())
+                    child.setText(f"${total_net - annual_exp_total:,.2f}")
                 
             for m_idx, ref in enumerate(self.view.month_tabs_refs):
                 checks = monthly_data[m_idx]
@@ -275,8 +301,10 @@ class MainController:
                     ref['table'].setItem(r, 1, QTableWidgetItem(f"${c['gross']:,.2f}"))
                     ref['table'].setItem(r, 2, QTableWidgetItem(f"${c['net']:,.2f}"))
                 ref['inc'].setText(f"${m_net:,.2f}")
-                ref['exp'].setText(f"${total_exp:,.2f}")
-                ref['rem'].setText(f"${m_net - total_exp:,.2f}")
+                
+                # --- NEW MATH: Display the specific expenses for this month tab ---
+                ref['exp'].setText(f"${month_expenses[m_idx]:,.2f}")
+                ref['rem'].setText(f"${m_net - month_expenses[m_idx]:,.2f}")
                 
                 grid = ref['grid']
                 while grid.count():
