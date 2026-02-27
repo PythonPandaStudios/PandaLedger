@@ -99,36 +99,29 @@ class MainController:
         QApplication.instance().setStyleSheet(THEMES[theme_name].stylesheet)
         self.recalculate_budget()
 
-    def open_payroll_settings(self):
-        dialog = PayrollSettingsDialog(self.view, self.current_config)
-        if dialog.exec():
-            self.current_config = dialog.get_data()
-            for k, v in self.current_config.items(): self.save_setting(k, v)
-            self.recalculate_budget()
-
-    def add_deduction(self, db_id=None, name="New", amount=0, is_pct=False, is_pre=True):
+    def add_deduction(self, db_id=None, name="New", amount=0, is_pct=False, is_pre=True, category="Other Deduction"):
         if db_id is None:
             with SessionLocal() as session:
-                new_ded = Deduction(name=name, amount=amount, is_percent=is_pct, is_pre_tax=is_pre)
+                new_ded = Deduction(name=name, amount=amount, is_percent=is_pct, is_pre_tax=is_pre, category=category)
                 session.add(new_ded)
                 session.commit()
                 db_id = new_ded.id
         
-        row = DeductionRow(db_id, name, amount, is_pct, is_pre)
+        row = DeductionRow(db_id, name, amount, is_pct, is_pre, category)
         row.dataChanged.connect(self.sync_deduction)
         row.deleted.connect(self.delete_deduction)
         self.deductions_dialog.row_layout.addWidget(row)
         self.recalculate_budget()
 
-    def add_expense(self, db_id=None, name="New", amount=0, is_global=True, month_idx=-1):
+    def add_expense(self, db_id=None, name="New", amount=0, is_global=True, month_idx=-1, category="Other Expense"):
         if db_id is None:
             with SessionLocal() as session:
-                new_exp = Expense(name=name, amount=amount, is_global=is_global, month_idx=month_idx)
+                new_exp = Expense(name=name, amount=amount, is_global=is_global, month_idx=month_idx, category=category)
                 session.add(new_exp)
                 session.commit()
                 db_id = new_exp.id
             
-        row = ExpenseRow(db_id, name, amount, is_global, month_idx)
+        row = ExpenseRow(db_id, name, amount, is_global, month_idx, category)
         row.dataChanged.connect(self.sync_expense)
         row.deleted.connect(self.delete_expense)
         self.expenses_dialog.row_layout.addWidget(row)
@@ -139,6 +132,7 @@ class MainController:
             ded = session.query(Deduction).filter_by(id=data['id']).first()
             if ded:
                 ded.name = data['name']
+                ded.category = data['category']
                 ded.amount = data['value']
                 ded.is_percent = data['is_percent']
                 ded.is_pre_tax = data['is_pre_tax']
@@ -150,6 +144,7 @@ class MainController:
             exp = session.query(Expense).filter_by(id=data['id']).first()
             if exp:
                 exp.name = data['name']
+                exp.category = data['category']
                 exp.amount = data['amount']
                 exp.is_global = data['is_global']
                 exp.month_idx = data['month_idx']
@@ -194,11 +189,12 @@ class MainController:
         with SessionLocal() as session:
             deductions = session.query(Deduction).all()
             for d in deductions: 
-                self.add_deduction(d.id, d.name, d.amount, d.is_percent, d.is_pre_tax)
+                # getattr used just in case schema migration isn't fully completed on first boot
+                self.add_deduction(d.id, d.name, d.amount, d.is_percent, d.is_pre_tax, getattr(d, 'category', 'Other Deduction'))
                 
             expenses = session.query(Expense).all()
             for e in expenses: 
-                self.add_expense(e.id, e.name, e.amount, e.is_global, e.month_idx)
+                self.add_expense(e.id, e.name, e.amount, e.is_global, e.month_idx, getattr(e, 'category', 'Other Expense'))
 
     def recalculate_budget(self):
         try:
@@ -213,7 +209,6 @@ class MainController:
             self.view.year_table.setRowCount(0)
             total_gross, total_net = 0, 0
             
-            # 1. Prepare dynamic ledger data per month
             monthly_ledger_data = {i: [] for i in range(12)}
             
             for check in pay_schedule:
@@ -223,21 +218,19 @@ class MainController:
                 gross = check['hours'] * check['rate']
                 pre_tax_total, post_tax_total = 0, 0
                 
-                # Add Gross Pay to Ledger
                 monthly_ledger_data[m_idx].append([check['date'], "Employer", "Gross Pay", gross, "Paycheck"])
                 
-                # Deductions
                 for d in deductions:
                     amt = d['value'] if not d['is_percent'] else gross * (d['value'] / 100)
                     if d['is_pre_tax']: pre_tax_total += amt
                     else: post_tax_total += amt
                     if amt > 0:
-                        monthly_ledger_data[m_idx].append([check['date'], d['name'], "Deduction", -amt, "Payroll Deduction"])
+                        # Append with the selected custom category
+                        monthly_ledger_data[m_idx].append([check['date'], d['name'], d['category'], -amt, "Payroll Deduction"])
                 
                 taxable = max(0, gross - pre_tax_total)
                 taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config)
                 
-                # Taxes
                 tax_map = [("Federal Tax", taxes.fed_tax), ("State Tax", taxes.state_tax), 
                            ("Social Security", taxes.ss_tax), ("Medicare", taxes.medicare_tax), 
                            ("Additional Tax", taxes.additional_tax)]
@@ -249,7 +242,6 @@ class MainController:
                 total_gross += gross
                 total_net += net
                 
-                # Maintain Year Table Calculations
                 checks_per_month = sum(1 for c in pay_schedule if (c['date'].month - 1 == m_idx and c['date'].year == self.current_year) or (m_idx == 0 and c['date'].year > self.current_year))
                 m_exp_total = sum(e['amount'] for e in expenses if e['is_global'] or e['month_idx'] == m_idx)
                 rem = net - (m_exp_total / checks_per_month) if checks_per_month > 0 else net
@@ -263,14 +255,13 @@ class MainController:
                 self.view.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
                 self.view.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
 
-            # 2. Add Expenses to Ledger
             for m_idx in range(12):
-                exp_date = datetime.date(self.current_year, m_idx + 1, 1) # Assign to the 1st of the month
+                exp_date = datetime.date(self.current_year, m_idx + 1, 1) 
                 for e in expenses:
                     if e['is_global'] or e['month_idx'] == m_idx:
-                        monthly_ledger_data[m_idx].append([exp_date, e['name'], "Expense", -e['amount'], "Budgeted Expense"])
+                        # Append with the selected custom category
+                        monthly_ledger_data[m_idx].append([exp_date, e['name'], e['category'], -e['amount'], "Budgeted Expense"])
 
-            # 3. Add Actual DB Transactions to Ledger
             with SessionLocal() as session:
                 db_transactions = session.query(Transaction).all()
                 for t in db_transactions:
@@ -279,7 +270,6 @@ class MainController:
                         category_name = t.category.name if t.category else "Uncategorized"
                         monthly_ledger_data[t_m_idx].append([t.date, t.payee, category_name, t.amount, t.notes])
             
-            # Update Annual Overview
             annual_exp_total = sum(e['amount'] * (12 if e['is_global'] else 1) for e in expenses)
             for child in self.view.card_gross.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
@@ -288,28 +278,27 @@ class MainController:
             for child in self.view.card_savings.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_net - annual_exp_total:,.2f}")
                 
-            # 4. Process individual month tabs, populate models, and calculate summaries dynamically
             for m_idx, ref in enumerate(self.view.month_tabs_refs):
                 month_data = monthly_ledger_data[m_idx]
-                month_data.sort(key=lambda x: x[0]) # Sort by Date
+                month_data.sort(key=lambda x: x[0])
                 
                 model = TransactionModel(month_data)
                 ref['ledger'].setModel(model)
                 
-                # Calculate summaries strictly from ledger rows
                 net_income = 0.0
                 total_expenses = 0.0
                 
                 for row_data in month_data:
                     amt = row_data[3]
-                    cat = row_data[2]
+                    # Check Notes (index 4) instead of Category (index 2) so math stays accurate!
+                    notes = row_data[4]
                     
-                    if cat in ["Gross Pay", "Tax", "Deduction"]:
-                        net_income += amt # Taxes and deductions are negative, gross is positive -> equals net
+                    if notes in ["Paycheck", "Payroll Tax", "Payroll Deduction"]:
+                        net_income += amt
                     elif amt < 0:
                         total_expenses += abs(amt)
-                    elif amt > 0 and cat not in ["Gross Pay", "Tax", "Deduction"]:
-                        net_income += amt # Any other positive cashflow
+                    elif amt > 0 and notes not in ["Paycheck", "Payroll Tax", "Payroll Deduction"]:
+                        net_income += amt
                         
                 ref['inc'].setText(f"${net_income:,.2f}")
                 ref['exp'].setText(f"${total_expenses:,.2f}")
