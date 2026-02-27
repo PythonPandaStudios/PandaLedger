@@ -1,7 +1,9 @@
+import calendar
 import datetime
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QComboBox, 
                                QLineEdit, QDialogButtonBox, QLabel, QWidget, 
-                               QMessageBox, QScrollArea, QPushButton, QHBoxLayout, QDateEdit)
+                               QMessageBox, QScrollArea, QPushButton, QHBoxLayout, 
+                               QDateEdit, QRadioButton, QButtonGroup)
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtCore import Qt, Signal, QDate
 
@@ -178,7 +180,6 @@ class ManageDeductionsDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
-# --- NEW DIALOG: Add Transaction ---
 class AddTransactionDialog(QDialog):
     payee_edited_signal = Signal(str)
     save_transaction_signal = Signal(dict)
@@ -191,26 +192,46 @@ class AddTransactionDialog(QDialog):
         layout = QVBoxLayout(self)
         self.form = QFormLayout()
         
+        # --- Type Radio Buttons ---
+        type_layout = QHBoxLayout()
+        self.radio_expense = QRadioButton("Expense")
+        self.radio_deposit = QRadioButton("Deposit")
+        self.radio_expense.setChecked(True) # Default to expense
+        self.btn_group = QButtonGroup()
+        self.btn_group.addButton(self.radio_expense)
+        self.btn_group.addButton(self.radio_deposit)
+        type_layout.addWidget(self.radio_expense)
+        type_layout.addWidget(self.radio_deposit)
+        self.form.addRow("Type:", type_layout)
+
+        # --- Scope Selection Combo ---
+        self.tx_scope = QComboBox()
+        self.tx_scope.addItem("One-Time (Use Date)")
+        self.tx_scope.addItem("Global (All Months)")
+        self.tx_scope.addItems(list(calendar.month_name)[1:])
+        self.tx_scope.currentIndexChanged.connect(self.toggle_date)
+        self.form.addRow("Scope:", self.tx_scope)
+        
         self.tx_date = QDateEdit()
         self.tx_date.setCalendarPopup(True)
         self.tx_date.setDate(QDate.currentDate())
+        self.form.addRow("Date:", self.tx_date)
         
         self.tx_payee = QLineEdit()
         self.tx_payee.textEdited.connect(self.payee_edited_signal.emit)
+        self.form.addRow("Payee:", self.tx_payee)
         
         self.tx_amount = QLineEdit()
+        self.form.addRow("Amount:", self.tx_amount)
         
         self.tx_category = QComboBox()
-        self.tx_category.addItems(EXPENSE_CATEGORIES) # Prepopulated with predefined categories
+        self.tx_category.addItems(EXPENSE_CATEGORIES)
+        self.form.addRow("Category:", self.tx_category)
         
         self.tx_account = QComboBox()
-        self.tx_notes = QLineEdit()
-        
-        self.form.addRow("Date:", self.tx_date)
-        self.form.addRow("Payee:", self.tx_payee)
-        self.form.addRow("Amount:", self.tx_amount)
-        self.form.addRow("Category:", self.tx_category)
         self.form.addRow("Account:", self.tx_account)
+        
+        self.tx_notes = QLineEdit()
         self.form.addRow("Notes:", self.tx_notes)
         
         layout.addLayout(self.form)
@@ -220,8 +241,14 @@ class AddTransactionDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
         
+    def toggle_date(self):
+        # Disable the date widget if a recurring budget scope is selected
+        self.tx_date.setEnabled(self.tx_scope.currentIndex() == 0)
+        
     def emit_save(self):
         data = {
+            'tx_type': 'Expense' if self.radio_expense.isChecked() else 'Deposit',
+            'scope_idx': self.tx_scope.currentIndex(),
             'date': self.tx_date.date().toPython(),
             'payee': self.tx_payee.text(),
             'amount': self.tx_amount.text(),

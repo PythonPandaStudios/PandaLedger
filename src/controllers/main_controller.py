@@ -30,7 +30,6 @@ class MainController:
         self.view = MainWindowView()
         self.deductions_dialog = ManageDeductionsDialog(self.view)
         
-        # New Add Transaction Dialog Instance
         self.add_tx_dialog = AddTransactionDialog(self.view)
         
         self.connect_signals()
@@ -94,10 +93,8 @@ class MainController:
         self.view.manage_deductions_signal.connect(self.deductions_dialog.exec)
         self.deductions_dialog.add_btn.clicked.connect(lambda: self.add_deduction())
         
-        # Open the new Add Transaction popup
         self.view.add_transaction_signal.connect(self.open_add_transaction_dialog)
         
-        # Dialog Internal Signals
         self.add_tx_dialog.payee_edited_signal.connect(self.handle_payee_edited)
         self.add_tx_dialog.save_transaction_signal.connect(self.save_transaction)
         
@@ -118,17 +115,18 @@ class MainController:
             self.recalculate_budget()
 
     def open_add_transaction_dialog(self):
-        # Refresh the accounts combo list each time it opens
         with SessionLocal() as session:
             accounts = session.query(Account).all()
             self.add_tx_dialog.tx_account.clear()
             for a in accounts:
                 self.add_tx_dialog.tx_account.addItem(a.name, a.id)
                 
-        # Clear previous inputs
+        # Reset defaults
         self.add_tx_dialog.tx_payee.clear()
         self.add_tx_dialog.tx_amount.clear()
         self.add_tx_dialog.tx_notes.clear()
+        self.add_tx_dialog.radio_expense.setChecked(True)
+        self.add_tx_dialog.tx_scope.setCurrentIndex(0)
         
         self.add_tx_dialog.exec()
 
@@ -145,12 +143,12 @@ class MainController:
 
     def save_transaction(self, tx_data):
         try:
-            amt = float(tx_data['amount'])
+            # Force absolute value to start, we handle sign manually based on user's radio button
+            amt = abs(float(tx_data['amount'])) 
         except ValueError:
             amt = 0.0
             
         with SessionLocal() as session:
-            # Smart logic: Find or create the Category if the string doesn't exist yet
             cat_name = tx_data['category']
             category = session.query(Category).filter_by(name=cat_name).first()
             if not category:
@@ -158,18 +156,44 @@ class MainController:
                 session.add(category)
                 session.commit()
                 
-            new_tx = Transaction(
-                date=tx_data['date'],
-                payee=tx_data['payee'],
-                amount=amt,
-                category_id=category.id,
-                account_id=tx_data['account_id'],
-                notes=tx_data['notes']
-            )
-            session.add(new_tx)
+            scope_idx = tx_data['scope_idx']
+            tx_type = tx_data['tx_type']
+
+            # If scope is "One-Time", save as realized Transaction
+            if scope_idx == 0:
+                final_amt = -amt if tx_type == 'Expense' else amt
+                new_tx = Transaction(
+                    date=tx_data['date'],
+                    payee=tx_data['payee'],
+                    amount=final_amt,
+                    category_id=category.id,
+                    account_id=tx_data['account_id'],
+                    notes=tx_data['notes']
+                )
+                session.add(new_tx)
+            
+            # If scope is Global or Month, save as recurring Budgeted Expense
+            else:
+                is_global = (scope_idx == 1)
+                month_idx = scope_idx - 2 if not is_global else -1
+                
+                # In recalculate_budget, expenses are subtracted (-e['amount']) automatically.
+                # If the user enters a "Deposit" recurring budget item, we reverse it so subtracting it adds income!
+                final_amt = amt if tx_type == 'Expense' else -amt
+                
+                new_exp = Expense(
+                    name=tx_data['payee'],
+                    amount=final_amt,
+                    is_global=is_global,
+                    month_idx=month_idx,
+                    category=cat_name
+                )
+                session.add(new_exp)
+
             session.commit()
         
         self.recalculate_budget()
+        self.add_tx_dialog.accept() # Close dialog upon successful save
 
     def handle_receipt_dropped(self, db_id, file_path):
         user_data_path = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
@@ -251,6 +275,9 @@ class MainController:
             
             deductions = [self.deductions_dialog.row_layout.itemAt(i).widget().get_values() for i in range(self.deductions_dialog.row_layout.count())]
             
+            with SessionLocal() as session:
+                expenses = session.query(Expense).all()
+            
             pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
             pay_schedule.sort(key=lambda x: x['date'])
             
@@ -289,7 +316,6 @@ class MainController:
                 total_gross += gross
                 total_net += net
                 
-                # Removed budgeted expenses math from checks_per_month rem calculation
                 rem = net
                 
                 row = self.view.year_table.rowCount()
@@ -300,6 +326,13 @@ class MainController:
                 self.view.year_table.setItem(row, 3, QTableWidgetItem(f"${gross:,.2f}"))
                 self.view.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
                 self.view.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
+
+            # --- Budgeted Expenses mapped directly into Ledger ---
+            for m_idx in range(12):
+                exp_date = datetime.date(self.current_year, m_idx + 1, 1) 
+                for e in expenses:
+                    if e.is_global or e.month_idx == m_idx:
+                        monthly_ledger_data[m_idx].append([exp_date, e.name, e.category, -e.amount, "Budgeted Expense", None, None])
 
             with SessionLocal() as session:
                 db_transactions = session.query(Transaction).all()
@@ -314,7 +347,6 @@ class MainController:
             for child in self.view.card_net.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
             for child in self.view.card_savings.findChildren(QLabel):
-                # Using total_net as placeholder now that budgeted expenses were removed
                 if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
                 
             for m_idx, ref in enumerate(self.view.month_tabs_refs):
