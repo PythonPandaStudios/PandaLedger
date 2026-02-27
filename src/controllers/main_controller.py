@@ -33,7 +33,7 @@ class MainController:
         
         self.change_theme(self.current_config.get("theme", "Light"))
         self.load_data()
-        self.load_transactions() 
+        self.recalculate_budget()
 
     def init_db(self):
         init_sqlalchemy_db()
@@ -51,18 +51,6 @@ class MainController:
                 t2 = Transaction(date=datetime.date(2026, 2, 15), payee="Employer Inc", amount=3000.00, notes="Mid-month pay", account_id=checking.id, category_id=salary.id)
                 session.add_all([t1, t2])
                 session.commit()
-
-    def load_transactions(self):
-        with SessionLocal() as session:
-            db_transactions = session.query(Transaction).all()
-            table_data = []
-            for t in db_transactions:
-                category_name = t.category.name if t.category else "Uncategorized"
-                table_data.append([t.date, t.payee, category_name, t.amount, t.notes])
-            self.transaction_model = TransactionModel(table_data)
-            
-            for ref in self.view.month_tabs_refs:
-                ref['ledger'].setModel(self.transaction_model)
 
     def load_settings(self):
         defaults = {
@@ -169,40 +157,36 @@ class MainController:
         self.recalculate_budget()
 
     def delete_deduction(self, db_id):
-        # 1. Delete from the Database
         with SessionLocal() as session:
             ded = session.query(Deduction).filter_by(id=db_id).first()
             if ded:
                 session.delete(ded)
                 session.commit()
                 
-        # 2. Safely find and remove the specific row from the Dialog's UI
         layout = self.deductions_dialog.row_layout
         for i in range(layout.count()):
             widget = layout.itemAt(i).widget()
             if widget and hasattr(widget, 'db_id') and widget.db_id == db_id:
                 widget.setParent(None)
                 widget.deleteLater()
-                break # We found it, no need to keep searching
+                break
                 
         self.recalculate_budget()
 
     def delete_expense(self, db_id):
-        # 1. Delete from the Database
         with SessionLocal() as session:
             exp = session.query(Expense).filter_by(id=db_id).first()
             if exp:
                 session.delete(exp)
                 session.commit()
                 
-        # 2. Safely find and remove the specific row from the Dialog's UI
         layout = self.expenses_dialog.row_layout
         for i in range(layout.count()):
             widget = layout.itemAt(i).widget()
             if widget and hasattr(widget, 'db_id') and widget.db_id == db_id:
                 widget.setParent(None)
                 widget.deleteLater()
-                break # We found it, no need to keep searching
+                break
                 
         self.recalculate_budget()
 
@@ -223,52 +207,52 @@ class MainController:
             expenses = [self.expenses_dialog.row_layout.itemAt(i).widget().get_values() for i in range(self.expenses_dialog.row_layout.count())]
             deductions = [self.deductions_dialog.row_layout.itemAt(i).widget().get_values() for i in range(self.deductions_dialog.row_layout.count())]
             
-            # --- NEW MATH: Organize Expenses by Month ---
-            month_expenses = {i: 0 for i in range(12)}
-            for e in expenses:
-                if e['is_global']:
-                    for i in range(12): month_expenses[i] += e['amount']
-                else:
-                    if 0 <= e['month_idx'] <= 11:
-                        month_expenses[e['month_idx']] += e['amount']
-            
             pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
             pay_schedule.sort(key=lambda x: x['date'])
             
-            # Figure out how many checks are in each month to divide expenses accurately per-check
-            checks_per_month = {i: 0 for i in range(12)}
-            for check in pay_schedule:
-                m_idx = check['date'].month - 1
-                if check['date'].year > self.current_year: m_idx = 0 
-                checks_per_month[m_idx] += 1
-            
             self.view.year_table.setRowCount(0)
             total_gross, total_net = 0, 0
-            monthly_data = {i: [] for i in range(12)}
+            
+            # 1. Prepare dynamic ledger data per month
+            monthly_ledger_data = {i: [] for i in range(12)}
             
             for check in pay_schedule:
                 m_idx = check['date'].month - 1
                 if check['date'].year > self.current_year: m_idx = 0 
                 
                 gross = check['hours'] * check['rate']
-                check_ded_details = []
                 pre_tax_total, post_tax_total = 0, 0
+                
+                # Add Gross Pay to Ledger
+                monthly_ledger_data[m_idx].append([check['date'], "Employer", "Gross Pay", gross, "Paycheck"])
+                
+                # Deductions
                 for d in deductions:
                     amt = d['value'] if not d['is_percent'] else gross * (d['value'] / 100)
-                    check_ded_details.append({'name': d['name'], 'amount': amt})
                     if d['is_pre_tax']: pre_tax_total += amt
                     else: post_tax_total += amt
+                    if amt > 0:
+                        monthly_ledger_data[m_idx].append([check['date'], d['name'], "Deduction", -amt, "Payroll Deduction"])
                 
                 taxable = max(0, gross - pre_tax_total)
                 taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config)
+                
+                # Taxes
+                tax_map = [("Federal Tax", taxes.fed_tax), ("State Tax", taxes.state_tax), 
+                           ("Social Security", taxes.ss_tax), ("Medicare", taxes.medicare_tax), 
+                           ("Additional Tax", taxes.additional_tax)]
+                for t_name, t_amt in tax_map:
+                    if t_amt > 0:
+                        monthly_ledger_data[m_idx].append([check['date'], t_name, "Tax", -t_amt, "Payroll Tax"])
+                
                 net = gross - pre_tax_total - taxes.total_tax - post_tax_total
-                
-                # --- NEW MATH: Apply specific month's expenses ---
-                checks_in_this_month = checks_per_month[m_idx]
-                rem = net - (month_expenses[m_idx] / checks_in_this_month) if checks_in_this_month > 0 else net
-                
                 total_gross += gross
                 total_net += net
+                
+                # Maintain Year Table Calculations
+                checks_per_month = sum(1 for c in pay_schedule if (c['date'].month - 1 == m_idx and c['date'].year == self.current_year) or (m_idx == 0 and c['date'].year > self.current_year))
+                m_exp_total = sum(e['amount'] for e in expenses if e['is_global'] or e['month_idx'] == m_idx)
+                rem = net - (m_exp_total / checks_per_month) if checks_per_month > 0 else net
                 
                 row = self.view.year_table.rowCount()
                 self.view.year_table.insertRow(row)
@@ -278,69 +262,62 @@ class MainController:
                 self.view.year_table.setItem(row, 3, QTableWidgetItem(f"${gross:,.2f}"))
                 self.view.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
                 self.view.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
-                
-                monthly_data[m_idx].append({'date': check['date'], 'gross': gross, 'net': net, 'taxes': taxes, 'deductions_list': check_ded_details})
-                
+
+            # 2. Add Expenses to Ledger
+            for m_idx in range(12):
+                exp_date = datetime.date(self.current_year, m_idx + 1, 1) # Assign to the 1st of the month
+                for e in expenses:
+                    if e['is_global'] or e['month_idx'] == m_idx:
+                        monthly_ledger_data[m_idx].append([exp_date, e['name'], "Expense", -e['amount'], "Budgeted Expense"])
+
+            # 3. Add Actual DB Transactions to Ledger
+            with SessionLocal() as session:
+                db_transactions = session.query(Transaction).all()
+                for t in db_transactions:
+                    t_m_idx = t.date.month - 1
+                    if t.date.year == self.current_year and 0 <= t_m_idx <= 11:
+                        category_name = t.category.name if t.category else "Uncategorized"
+                        monthly_ledger_data[t_m_idx].append([t.date, t.payee, category_name, t.amount, t.notes])
+            
+            # Update Annual Overview
+            annual_exp_total = sum(e['amount'] * (12 if e['is_global'] else 1) for e in expenses)
             for child in self.view.card_gross.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
             for child in self.view.card_net.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
             for child in self.view.card_savings.findChildren(QLabel):
-                if child.objectName() == "StatValue": 
-                    annual_exp_total = sum(month_expenses.values())
-                    child.setText(f"${total_net - annual_exp_total:,.2f}")
+                if child.objectName() == "StatValue": child.setText(f"${total_net - annual_exp_total:,.2f}")
                 
+            # 4. Process individual month tabs, populate models, and calculate summaries dynamically
             for m_idx, ref in enumerate(self.view.month_tabs_refs):
-                checks = monthly_data[m_idx]
-                ref['table'].setRowCount(0)
-                m_net = sum(c['net'] for c in checks)
-                for c in checks:
-                    r = ref['table'].rowCount()
-                    ref['table'].insertRow(r)
-                    ref['table'].setItem(r, 0, QTableWidgetItem(c['date'].strftime("%b %d")))
-                    ref['table'].setItem(r, 1, QTableWidgetItem(f"${c['gross']:,.2f}"))
-                    ref['table'].setItem(r, 2, QTableWidgetItem(f"${c['net']:,.2f}"))
-                ref['inc'].setText(f"${m_net:,.2f}")
+                month_data = monthly_ledger_data[m_idx]
+                month_data.sort(key=lambda x: x[0]) # Sort by Date
                 
-                # --- NEW MATH: Display the specific expenses for this month tab ---
-                ref['exp'].setText(f"${month_expenses[m_idx]:,.2f}")
-                ref['rem'].setText(f"${m_net - month_expenses[m_idx]:,.2f}")
+                model = TransactionModel(month_data)
+                ref['ledger'].setModel(model)
                 
-                grid = ref['grid']
-                while grid.count():
-                    item = grid.takeAt(0)
-                    if item.widget(): item.widget().deleteLater()
+                # Calculate summaries strictly from ledger rows
+                net_income = 0.0
+                total_expenses = 0.0
                 
-                row_idx = 0
-                for check_data in checks:
-                    title = QLabel(f"Paycheck: {check_data['date'].strftime('%b %d, %Y')}")
-                    title.setStyleSheet("font-weight: bold; color: #3B82F6; font-size: 15px;")
-                    grid.addWidget(title, row_idx, 0, 1, 2); row_idx += 1
+                for row_data in month_data:
+                    amt = row_data[3]
+                    cat = row_data[2]
                     
-                    grid.addWidget(QLabel("Gross Pay"), row_idx, 0)
-                    v_gross = QLabel(f"${check_data['gross']:,.2f}")
-                    v_gross.setAlignment(Qt.AlignRight)
-                    grid.addWidget(v_gross, row_idx, 1); row_idx += 1
-                    
-                    t = check_data['taxes']
-                    tax_map = [("Federal", t.fed_tax), ("State", t.state_tax), ("SS", t.ss_tax), ("Med", t.medicare_tax), ("Addtl", t.additional_tax)]
-                    for label, val in tax_map:
-                        if val > 0:
-                            l = QLabel(f"  {label}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
-                            v = QLabel(f"-${val:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
-                            row_idx += 1
-                            
-                    for ded in check_data['deductions_list']:
-                        l = QLabel(f"  {ded['name']}"); l.setStyleSheet("color: #6B7280; font-size: 12px;"); grid.addWidget(l, row_idx, 0)
-                        v = QLabel(f"-${ded['amount']:,.2f}"); v.setStyleSheet("color: #EF4444; font-size: 12px;"); v.setAlignment(Qt.AlignRight); grid.addWidget(v, row_idx, 1)
-                        row_idx += 1
+                    if cat in ["Gross Pay", "Tax", "Deduction"]:
+                        net_income += amt # Taxes and deductions are negative, gross is positive -> equals net
+                    elif amt < 0:
+                        total_expenses += abs(amt)
+                    elif amt > 0 and cat not in ["Gross Pay", "Tax", "Deduction"]:
+                        net_income += amt # Any other positive cashflow
                         
-                    net_l, net_v = QLabel("Net Total"), QLabel(f"${check_data['net']:,.2f}")
-                    net_l.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;")
-                    net_v.setStyleSheet("font-weight: bold; border-top: 1px solid #E5E7EB;"); net_v.setAlignment(Qt.AlignRight)
-                    grid.addWidget(net_l, row_idx, 0); grid.addWidget(net_v, row_idx, 1); row_idx += 1
-                    grid.addWidget(QLabel(""), row_idx, 0); row_idx += 1 
+                ref['inc'].setText(f"${net_income:,.2f}")
+                ref['exp'].setText(f"${total_expenses:,.2f}")
+                ref['rem'].setText(f"${net_income - total_expenses:,.2f}")
+
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"Recalculate Error: {e}")
 
     def export_to_clipboard(self):

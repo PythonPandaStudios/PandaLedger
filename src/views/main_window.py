@@ -89,37 +89,6 @@ class MainWindowView(QMainWindow):
     def setup_month_tab(self, m_idx):
         tab = QWidget()
         main_layout = QVBoxLayout(tab) 
-        
-        top_half = QHBoxLayout()
-        
-        left = QVBoxLayout()
-        table = QTableWidget(0, 3)
-        table.setHorizontalHeaderLabels(["Date", "Gross", "Net"])
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        table.setFixedHeight(150)
-        left.addWidget(table)
-        
-        summary = QFrame(objectName="MonthSummaryBox")
-        s_grid = QFormLayout(summary)
-        l_inc, l_exp, l_rem = QLabel("$0.00"), QLabel("$0.00"), QLabel("$0.00")
-        s_grid.addRow("Net Income:", l_inc)
-        s_grid.addRow("Expenses:", l_exp)
-        s_grid.addRow("Remaining:", l_rem)
-        left.addWidget(summary)
-        left.addStretch()
-
-        right = QVBoxLayout()
-        scroll = QScrollArea(objectName="ExpenseBreakdownBox", widgetResizable=True)
-        cont = QWidget()
-        grid = QGridLayout(cont)
-        grid.setAlignment(Qt.AlignTop)
-        scroll.setWidget(cont)
-        right.addWidget(QLabel("Breakdown", objectName="HeaderTitle"))
-        right.addWidget(scroll)
-        
-        top_half.addLayout(left, 1)
-        top_half.addLayout(right, 1)
-        main_layout.addLayout(top_half, 1)
 
         ledger_label = QLabel(f"{self.month_names[m_idx]} Ledger", objectName="SectionTitle")
         main_layout.addWidget(ledger_label)
@@ -129,8 +98,11 @@ class MainWindowView(QMainWindow):
         ledger_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         ledger_view.verticalHeader().setVisible(False)
         ledger_view.setAlternatingRowColors(True)
-        main_layout.addWidget(ledger_view, 2)
+        main_layout.addWidget(ledger_view, 1)
 
+        # Bottom layout for buttons and the new summary box
+        bottom_layout = QHBoxLayout()
+        
         btn_layout = QHBoxLayout()
         btn_manage_ded = QPushButton("Manage Deductions")
         btn_manage_ded.clicked.connect(self.manage_deductions_signal.emit)
@@ -139,14 +111,24 @@ class MainWindowView(QMainWindow):
         
         btn_layout.addWidget(btn_manage_ded)
         btn_layout.addWidget(btn_manage_exp)
-        btn_layout.addStretch()
-        main_layout.addLayout(btn_layout)
+        
+        summary = QFrame(objectName="MonthSummaryBox")
+        s_grid = QFormLayout(summary)
+        l_inc, l_exp, l_rem = QLabel("$0.00"), QLabel("$0.00"), QLabel("$0.00")
+        s_grid.addRow("Net Income:", l_inc)
+        s_grid.addRow("Expenses:", l_exp)
+        s_grid.addRow("Remaining:", l_rem)
+
+        bottom_layout.addLayout(btn_layout)
+        bottom_layout.addStretch()
+        bottom_layout.addWidget(summary)
+
+        main_layout.addLayout(bottom_layout)
 
         self.tabs.addTab(tab, self.month_names[m_idx])
         
         self.month_tabs_refs.append({
-            'table': table, 'inc': l_inc, 'exp': l_exp, 'rem': l_rem, 
-            'grid': grid, 'ledger': ledger_view
+            'inc': l_inc, 'exp': l_exp, 'rem': l_rem, 'ledger': ledger_view
         })
 
     def create_stat_card(self, title, val, sub):
