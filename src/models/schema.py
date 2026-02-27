@@ -42,6 +42,7 @@ class Transaction(Base):
     payee = Column(String)
     amount = Column(Float)
     notes = Column(String)
+    receipt_path = Column(String, nullable=True) # --- NEW COLUMN ---
     account_id = Column(Integer, ForeignKey("accounts.id"))
     category_id = Column(Integer, ForeignKey("categories.id"))
     

@@ -1,6 +1,7 @@
+import os
 import calendar
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QComboBox, QPushButton
-from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QComboBox, QPushButton, QTableView
+from PySide6.QtCore import Signal, Qt
 
 DEDUCTION_CATEGORIES = [
     "401k", "ROTH IRA", "Traditional IRA", "Health Insurance", 
@@ -14,6 +15,40 @@ EXPENSE_CATEGORIES = [
     "Student Loan", "Debt Payment", "Entertainment", "Personal Care", 
     "Savings", "Subscriptions", "Other Expense"
 ]
+
+class LedgerTableView(QTableView):
+    receipt_dropped = Signal(int, str) # db_id, file_path
+
+    def __init__(self):
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.setSortingEnabled(True)
+        
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    ext = os.path.splitext(url.toLocalFile())[1].lower()
+                    if ext in ['.pdf', '.jpg', '.jpeg', '.png']:
+                        event.acceptProposedAction()
+                        return
+        event.ignore()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                file_path = url.toLocalFile()
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext in ['.pdf', '.jpg', '.jpeg', '.png']:
+                    index = self.indexAt(event.pos())
+                    if index.isValid():
+                        model = self.model()
+                        # Retrieve the db_id from our custom UserRole 
+                        db_id = model.data(index, Qt.UserRole + 1)
+                        if db_id is not None:
+                            self.receipt_dropped.emit(db_id, file_path)
+                            event.acceptProposedAction()
+                            break
 
 class DeductionRow(QWidget):
     dataChanged = Signal(dict)
