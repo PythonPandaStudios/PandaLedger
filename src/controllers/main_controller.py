@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, QStandardPaths, QUrl
 
 from views.main_window import MainWindowView
 from views.components import DeductionRow, ExpenseRow
-from views.dialogs import PayrollSettingsDialog, ManageDeductionsDialog, ManageExpensesDialog
+from views.dialogs import PayrollSettingsDialog, ManageDeductionsDialog, AddTransactionDialog
 from views.theme_manager import THEMES
 
 from models.payroll import PayrollCalculator
@@ -29,13 +29,13 @@ class MainController:
 
         self.view = MainWindowView()
         self.deductions_dialog = ManageDeductionsDialog(self.view)
-        self.expenses_dialog = ManageExpensesDialog(self.view)
+        
+        # New Add Transaction Dialog Instance
+        self.add_tx_dialog = AddTransactionDialog(self.view)
         
         self.connect_signals()
-        
         self.change_theme(self.current_config.get("theme", "Light"))
         
-        self.populate_form_combos()
         self.load_data()
         self.recalculate_budget()
 
@@ -92,14 +92,15 @@ class MainController:
         self.view.export_clipboard_signal.connect(self.export_to_clipboard)
         
         self.view.manage_deductions_signal.connect(self.deductions_dialog.exec)
-        self.view.manage_expenses_signal.connect(self.expenses_dialog.exec)
-        
         self.deductions_dialog.add_btn.clicked.connect(lambda: self.add_deduction())
-        self.expenses_dialog.add_btn.clicked.connect(lambda: self.add_expense())
         
-        # Transaction signals
-        self.view.payee_edited_signal.connect(self.handle_payee_edited)
-        self.view.save_transaction_signal.connect(self.save_transaction)
+        # Open the new Add Transaction popup
+        self.view.add_transaction_signal.connect(self.open_add_transaction_dialog)
+        
+        # Dialog Internal Signals
+        self.add_tx_dialog.payee_edited_signal.connect(self.handle_payee_edited)
+        self.add_tx_dialog.save_transaction_signal.connect(self.save_transaction)
+        
         self.view.receipt_dropped_signal.connect(self.handle_receipt_dropped)
         self.view.ledger_double_clicked_signal.connect(self.handle_ledger_double_click)
 
@@ -116,29 +117,31 @@ class MainController:
             for k, v in self.current_config.items(): self.save_setting(k, v)
             self.recalculate_budget()
 
-    def populate_form_combos(self):
+    def open_add_transaction_dialog(self):
+        # Refresh the accounts combo list each time it opens
         with SessionLocal() as session:
-            categories = session.query(Category).all()
-            self.view.tx_category.clear()
-            for c in categories:
-                self.view.tx_category.addItem(c.name, c.id) # .name is text, .id is hidden data
-                
             accounts = session.query(Account).all()
-            self.view.tx_account.clear()
+            self.add_tx_dialog.tx_account.clear()
             for a in accounts:
-                self.view.tx_account.addItem(a.name, a.id)
+                self.add_tx_dialog.tx_account.addItem(a.name, a.id)
+                
+        # Clear previous inputs
+        self.add_tx_dialog.tx_payee.clear()
+        self.add_tx_dialog.tx_amount.clear()
+        self.add_tx_dialog.tx_notes.clear()
+        
+        self.add_tx_dialog.exec()
 
     def handle_payee_edited(self, text):
         if not text or len(text) < 2: return
         with SessionLocal() as session:
-            # Smart Autocomplete: Find most recent match
             match = session.query(Transaction).filter(Transaction.payee.ilike(f"%{text}%")).order_by(Transaction.date.desc()).first()
             if match:
-                cat_idx = self.view.tx_category.findData(match.category_id)
-                if cat_idx >= 0: self.view.tx_category.setCurrentIndex(cat_idx)
+                if match.category:
+                    self.add_tx_dialog.tx_category.setCurrentText(match.category.name)
                 
-                acc_idx = self.view.tx_account.findData(match.account_id)
-                if acc_idx >= 0: self.view.tx_account.setCurrentIndex(acc_idx)
+                acc_idx = self.add_tx_dialog.tx_account.findData(match.account_id)
+                if acc_idx >= 0: self.add_tx_dialog.tx_account.setCurrentIndex(acc_idx)
 
     def save_transaction(self, tx_data):
         try:
@@ -147,54 +150,50 @@ class MainController:
             amt = 0.0
             
         with SessionLocal() as session:
+            # Smart logic: Find or create the Category if the string doesn't exist yet
+            cat_name = tx_data['category']
+            category = session.query(Category).filter_by(name=cat_name).first()
+            if not category:
+                category = Category(name=cat_name, type=CategoryType.VARIABLE, monthly_limit=0.0)
+                session.add(category)
+                session.commit()
+                
             new_tx = Transaction(
                 date=tx_data['date'],
                 payee=tx_data['payee'],
                 amount=amt,
-                category_id=tx_data['category_id'],
+                category_id=category.id,
                 account_id=tx_data['account_id'],
                 notes=tx_data['notes']
             )
             session.add(new_tx)
             session.commit()
-            
-        # Clear inputs to prepare for next entry
-        self.view.tx_payee.clear()
-        self.view.tx_amount.clear()
-        self.view.tx_notes.clear()
-        self.view.tx_payee.setFocus()
         
         self.recalculate_budget()
 
     def handle_receipt_dropped(self, db_id, file_path):
-        # 1. Ensure the receipts directory exists in AppData
         user_data_path = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
         receipts_dir = os.path.join(user_data_path, "PythonPandaStudios", "PandaLedger", "receipts")
         os.makedirs(receipts_dir, exist_ok=True)
         
-        # 2. Copy the file securely, prefixing the name with the transaction ID
         filename = os.path.basename(file_path)
         unique_filename = f"tx_{db_id}_{filename}"
         dest_path = os.path.join(receipts_dir, unique_filename)
         
         shutil.copy2(file_path, dest_path)
         
-        # 3. Update the database record
         with SessionLocal() as session:
             tx = session.query(Transaction).get(db_id)
             if tx:
                 tx.receipt_path = dest_path
                 session.commit()
                 
-        # 4. Refresh to show the paperclip
         self.recalculate_budget()
 
     def handle_ledger_double_click(self, index):
         model = index.model()
-        # Look up custom role Qt.UserRole + 2 (RECEIPT_PATH_ROLE)
         path = model.data(index, Qt.UserRole + 2) 
         if path and os.path.exists(path):
-            # QDesktopServices delegates opening the file to the OS's native default program
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def add_deduction(self, db_id=None, name="New", amount=0, is_pct=False, is_pre=True, category="Other Deduction"):
@@ -211,20 +210,6 @@ class MainController:
         self.deductions_dialog.row_layout.addWidget(row)
         self.recalculate_budget()
 
-    def add_expense(self, db_id=None, name="New", amount=0, is_global=True, month_idx=-1, category="Other Expense"):
-        if db_id is None:
-            with SessionLocal() as session:
-                new_exp = Expense(name=name, amount=amount, is_global=is_global, month_idx=month_idx, category=category)
-                session.add(new_exp)
-                session.commit()
-                db_id = new_exp.id
-            
-        row = ExpenseRow(db_id, name, amount, is_global, month_idx, category)
-        row.dataChanged.connect(self.sync_expense)
-        row.deleted.connect(self.delete_expense)
-        self.expenses_dialog.row_layout.addWidget(row)
-        self.recalculate_budget()
-
     def sync_deduction(self, data):
         with SessionLocal() as session:
             ded = session.query(Deduction).filter_by(id=data['id']).first()
@@ -234,18 +219,6 @@ class MainController:
                 ded.amount = data['value']
                 ded.is_percent = data['is_percent']
                 ded.is_pre_tax = data['is_pre_tax']
-                session.commit()
-        self.recalculate_budget()
-
-    def sync_expense(self, data):
-        with SessionLocal() as session:
-            exp = session.query(Expense).filter_by(id=data['id']).first()
-            if exp:
-                exp.name = data['name']
-                exp.category = data['category']
-                exp.amount = data['amount']
-                exp.is_global = data['is_global']
-                exp.month_idx = data['month_idx']
                 session.commit()
         self.recalculate_budget()
 
@@ -266,38 +239,16 @@ class MainController:
                 
         self.recalculate_budget()
 
-    def delete_expense(self, db_id):
-        with SessionLocal() as session:
-            exp = session.query(Expense).filter_by(id=db_id).first()
-            if exp:
-                session.delete(exp)
-                session.commit()
-                
-        layout = self.expenses_dialog.row_layout
-        for i in range(layout.count()):
-            widget = layout.itemAt(i).widget()
-            if widget and hasattr(widget, 'db_id') and widget.db_id == db_id:
-                widget.setParent(None)
-                widget.deleteLater()
-                break
-                
-        self.recalculate_budget()
-
     def load_data(self):
         with SessionLocal() as session:
             deductions = session.query(Deduction).all()
             for d in deductions: 
                 self.add_deduction(d.id, d.name, d.amount, d.is_percent, d.is_pre_tax, getattr(d, 'category', 'Other Deduction'))
-                
-            expenses = session.query(Expense).all()
-            for e in expenses: 
-                self.add_expense(e.id, e.name, e.amount, e.is_global, e.month_idx, getattr(e, 'category', 'Other Expense'))
 
     def recalculate_budget(self):
         try:
             self.view.subtitle.setText(f"{self.current_config.get('schedule')} | {self.current_config.get('state')} Tax Rules")
             
-            expenses = [self.expenses_dialog.row_layout.itemAt(i).widget().get_values() for i in range(self.expenses_dialog.row_layout.count())]
             deductions = [self.deductions_dialog.row_layout.itemAt(i).widget().get_values() for i in range(self.deductions_dialog.row_layout.count())]
             
             pay_schedule = self.calculator.calculate_pay_dates(self.current_config, self.current_year)
@@ -315,7 +266,6 @@ class MainController:
                 gross = check['hours'] * check['rate']
                 pre_tax_total, post_tax_total = 0, 0
                 
-                # Append 7 Elements: Date, Payee, Category, Amount, Notes, db_id, receipt_path
                 monthly_ledger_data[m_idx].append([check['date'], "Employer", "Gross Pay", gross, "Paycheck", None, None])
                 
                 for d in deductions:
@@ -339,9 +289,8 @@ class MainController:
                 total_gross += gross
                 total_net += net
                 
-                checks_per_month = sum(1 for c in pay_schedule if (c['date'].month - 1 == m_idx and c['date'].year == self.current_year) or (m_idx == 0 and c['date'].year > self.current_year))
-                m_exp_total = sum(e['amount'] for e in expenses if e['is_global'] or e['month_idx'] == m_idx)
-                rem = net - (m_exp_total / checks_per_month) if checks_per_month > 0 else net
+                # Removed budgeted expenses math from checks_per_month rem calculation
+                rem = net
                 
                 row = self.view.year_table.rowCount()
                 self.view.year_table.insertRow(row)
@@ -352,28 +301,21 @@ class MainController:
                 self.view.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
                 self.view.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
 
-            for m_idx in range(12):
-                exp_date = datetime.date(self.current_year, m_idx + 1, 1) 
-                for e in expenses:
-                    if e['is_global'] or e['month_idx'] == m_idx:
-                        monthly_ledger_data[m_idx].append([exp_date, e['name'], e['category'], -e['amount'], "Budgeted Expense", None, None])
-
             with SessionLocal() as session:
                 db_transactions = session.query(Transaction).all()
                 for t in db_transactions:
                     t_m_idx = t.date.month - 1
                     if t.date.year == self.current_year and 0 <= t_m_idx <= 11:
                         category_name = t.category.name if t.category else "Uncategorized"
-                        # Append 7 Elements: Date, Payee, Category, Amount, Notes, db_id, receipt_path
                         monthly_ledger_data[t_m_idx].append([t.date, t.payee, category_name, t.amount, t.notes, t.id, t.receipt_path])
             
-            annual_exp_total = sum(e['amount'] * (12 if e['is_global'] else 1) for e in expenses)
             for child in self.view.card_gross.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
             for child in self.view.card_net.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
             for child in self.view.card_savings.findChildren(QLabel):
-                if child.objectName() == "StatValue": child.setText(f"${total_net - annual_exp_total:,.2f}")
+                # Using total_net as placeholder now that budgeted expenses were removed
+                if child.objectName() == "StatValue": child.setText(f"${total_net:,.2f}")
                 
             for m_idx, ref in enumerate(self.view.month_tabs_refs):
                 month_data = monthly_ledger_data[m_idx]
