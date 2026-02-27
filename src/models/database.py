@@ -1,6 +1,6 @@
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from PySide6.QtCore import QStandardPaths
 
 # Store database in user's AppData/Home folder just like before
@@ -17,10 +17,9 @@ DATABASE_URL = f"sqlite:///{DB_FILE}"
 # Create the SQLAlchemy engine and session
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 def init_db():
     """Creates all tables defined in models that inherit from Base."""
-    # We import models here to avoid circular imports
-    import models 
+    # We import the Base directly from schema where the tables are registered
+    from models.schema import Base 
     Base.metadata.create_all(bind=engine)

@@ -99,6 +99,14 @@ class MainController:
         QApplication.instance().setStyleSheet(THEMES[theme_name].stylesheet)
         self.recalculate_budget()
 
+    # --- RESTORED METHOD ---
+    def open_payroll_settings(self):
+        dialog = PayrollSettingsDialog(self.view, self.current_config)
+        if dialog.exec():
+            self.current_config = dialog.get_data()
+            for k, v in self.current_config.items(): self.save_setting(k, v)
+            self.recalculate_budget()
+
     def add_deduction(self, db_id=None, name="New", amount=0, is_pct=False, is_pre=True, category="Other Deduction"):
         if db_id is None:
             with SessionLocal() as session:
