@@ -97,6 +97,10 @@ QPushButton#CopyButton { background-color: #059669; color: white; border: none; 
 QPushButton#CopyButton:hover { background-color: #047857; }
 QPushButton#DeleteButton { background-color: #EF4444; color: white; border: none; }
 
+/* RADIO BUTTONS (LIGHT FIX) */
+QRadioButton::indicator { width: 14px; height: 14px; border-radius: 7px; border: 1px solid #9CA3AF; background-color: #FFFFFF; }
+QRadioButton::indicator:checked { background-color: #3B82F6; border: 1px solid #3B82F6; }
+
 /* TABLES & HEADERS */
 QTableWidget, QTableView { background-color: #FFFFFF; border: 1px solid #E5E7EB; gridline-color: #E5E7EB; color: #374151; alternate-background-color: #F9FAFB; selection-background-color: #3B82F6; selection-color: #FFFFFF; }
 /* Fix for dark vertical headers */
@@ -201,6 +205,11 @@ QPushButton:hover { background-color: #4B5563; }
 QPushButton#CopyButton { background-color: #059669; color: white; border: none; border-radius: 6px; padding: 8px 16px; }
 QPushButton#CopyButton:hover { background-color: #047857; }
 QPushButton#DeleteButton { background-color: #EF4444; color: white; border: none; }
+
+/* RADIO BUTTONS (DARK FIX) */
+QRadioButton { color: #E5E7EB; }
+QRadioButton::indicator { width: 14px; height: 14px; border-radius: 7px; border: 1px solid #6B7280; background-color: #1F2937; }
+QRadioButton::indicator:checked { background-color: #3B82F6; border: 1px solid #3B82F6; }
 
 /* TABLES & HEADERS */
 QTableWidget, QTableView { background-color: #1F2937; border: 1px solid #4B5563; gridline-color: #4B5563; color: #E5E7EB; alternate-background-color: #111827; selection-background-color: #3B82F6; selection-color: #FFFFFF; }

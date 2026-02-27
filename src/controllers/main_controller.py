@@ -2,7 +2,7 @@ import os
 import shutil
 import datetime
 from PySide6.QtWidgets import (QTableWidgetItem, QMessageBox, QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, 
+                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QHeaderView,
                                QScrollArea, QFrame, QTableWidget, QTableWidgetItem)
 from PySide6.QtGui import QGuiApplication, QDesktopServices
 from PySide6.QtCore import Qt, QStandardPaths, QUrl
@@ -29,7 +29,6 @@ class MainController:
 
         self.view = MainWindowView()
         self.deductions_dialog = ManageDeductionsDialog(self.view)
-        
         self.add_tx_dialog = AddTransactionDialog(self.view)
         
         self.connect_signals()
@@ -94,9 +93,10 @@ class MainController:
         self.deductions_dialog.add_btn.clicked.connect(lambda: self.add_deduction())
         
         self.view.add_transaction_signal.connect(self.open_add_transaction_dialog)
-        
         self.add_tx_dialog.payee_edited_signal.connect(self.handle_payee_edited)
         self.add_tx_dialog.save_transaction_signal.connect(self.save_transaction)
+        
+        self.view.delete_row_signal.connect(self.handle_delete_row) # --- NEW SIGNAL ---
         
         self.view.receipt_dropped_signal.connect(self.handle_receipt_dropped)
         self.view.ledger_double_clicked_signal.connect(self.handle_ledger_double_click)
@@ -121,13 +121,11 @@ class MainController:
             for a in accounts:
                 self.add_tx_dialog.tx_account.addItem(a.name, a.id)
                 
-        # Reset defaults
         self.add_tx_dialog.tx_payee.clear()
         self.add_tx_dialog.tx_amount.clear()
         self.add_tx_dialog.tx_notes.clear()
         self.add_tx_dialog.radio_expense.setChecked(True)
         self.add_tx_dialog.tx_scope.setCurrentIndex(0)
-        
         self.add_tx_dialog.exec()
 
     def handle_payee_edited(self, text):
@@ -143,7 +141,6 @@ class MainController:
 
     def save_transaction(self, tx_data):
         try:
-            # Force absolute value to start, we handle sign manually based on user's radio button
             amt = abs(float(tx_data['amount'])) 
         except ValueError:
             amt = 0.0
@@ -159,7 +156,6 @@ class MainController:
             scope_idx = tx_data['scope_idx']
             tx_type = tx_data['tx_type']
 
-            # If scope is "One-Time", save as realized Transaction
             if scope_idx == 0:
                 final_amt = -amt if tx_type == 'Expense' else amt
                 new_tx = Transaction(
@@ -171,14 +167,10 @@ class MainController:
                     notes=tx_data['notes']
                 )
                 session.add(new_tx)
-            
-            # If scope is Global or Month, save as recurring Budgeted Expense
             else:
                 is_global = (scope_idx == 1)
                 month_idx = scope_idx - 2 if not is_global else -1
                 
-                # In recalculate_budget, expenses are subtracted (-e['amount']) automatically.
-                # If the user enters a "Deposit" recurring budget item, we reverse it so subtracting it adds income!
                 final_amt = amt if tx_type == 'Expense' else -amt
                 
                 new_exp = Expense(
@@ -193,7 +185,64 @@ class MainController:
             session.commit()
         
         self.recalculate_budget()
-        self.add_tx_dialog.accept() # Close dialog upon successful save
+        self.add_tx_dialog.accept()
+
+    def handle_delete_row(self, row_data):
+        db_id = row_data['db_id']
+        notes = row_data['notes']
+        date = row_data['date']
+        payee = row_data['payee']
+        amount = row_data['amount']
+        m_idx = row_data['m_idx']
+
+        with SessionLocal() as session:
+            # 1. Budgeted Expenses Routing
+            if notes == "Budgeted Expense" and db_id is not None:
+                exp = session.query(Expense).get(db_id)
+                if exp:
+                    if exp.is_global:
+                        # Build the multi-action prompt
+                        msg_box = QMessageBox(self.view)
+                        msg_box.setWindowTitle("Delete Repeating Expense")
+                        msg_box.setText("This is a global/repeating monthly expense.\n\nDo you want to completely remove it globally, or just this single month?")
+                        btn_global = msg_box.addButton("Remove Globally", QMessageBox.AcceptRole)
+                        btn_single = msg_box.addButton("Just this Month", QMessageBox.AcceptRole)
+                        msg_box.addButton("Cancel", QMessageBox.RejectRole)
+                        msg_box.exec()
+                        
+                        if msg_box.clickedButton() == btn_global:
+                            session.delete(exp)
+                            session.commit()
+                        elif msg_box.clickedButton() == btn_single:
+                            # To exclude a single month, we delete the global and manually assign it strictly to the other 11 months
+                            session.delete(exp)
+                            for i in range(12):
+                                if i != m_idx:
+                                    new_exp = Expense(name=exp.name, amount=exp.amount, is_global=False, month_idx=i, category=exp.category)
+                                    session.add(new_exp)
+                            session.commit()
+                    else:
+                        session.delete(exp)
+                        session.commit()
+                        
+            # 2. Hard DB Transaction Routing
+            elif db_id is not None:
+                tx = session.query(Transaction).get(db_id)
+                if tx:
+                    session.delete(tx)
+                    session.commit()
+                    
+            # 3. Dynamic Runtime Items (Paychecks, Deductions, Taxes)
+            else:
+                sig = f"{date}_{payee}_{amount}_{notes}"
+                deleted_items_str = self.current_config.get('deleted_items', '')
+                deleted_items = set(deleted_items_str.split('|')) if deleted_items_str else set()
+                deleted_items.add(sig)
+                new_str = '|'.join(deleted_items)
+                self.current_config['deleted_items'] = new_str
+                self.save_setting('deleted_items', new_str)
+                
+        self.recalculate_budget()
 
     def handle_receipt_dropped(self, db_id, file_path):
         user_data_path = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
@@ -286,6 +335,17 @@ class MainController:
             
             monthly_ledger_data = {i: [] for i in range(12)}
             
+            # Use runtime filtering array to determine if dynamically generated rows were virtually deleted by user
+            deleted_items_str = self.current_config.get('deleted_items', '')
+            deleted_items = set(deleted_items_str.split('|')) if deleted_items_str else set()
+            
+            def add_to_ledger(m_idx, date, payee, category, amount, notes, db_id=None, receipt_path=None):
+                sig = f"{date}_{payee}_{amount}_{notes}"
+                if sig not in deleted_items:
+                    monthly_ledger_data[m_idx].append([date, payee, category, amount, notes, db_id, receipt_path])
+                    return True
+                return False
+            
             for check in pay_schedule:
                 m_idx = check['date'].month - 1
                 if check['date'].year > self.current_year: m_idx = 0 
@@ -293,14 +353,14 @@ class MainController:
                 gross = check['hours'] * check['rate']
                 pre_tax_total, post_tax_total = 0, 0
                 
-                monthly_ledger_data[m_idx].append([check['date'], "Employer", "Gross Pay", gross, "Paycheck", None, None])
+                add_to_ledger(m_idx, check['date'], "Employer", "Gross Pay", gross, "Paycheck")
                 
                 for d in deductions:
                     amt = d['value'] if not d['is_percent'] else gross * (d['value'] / 100)
                     if d['is_pre_tax']: pre_tax_total += amt
                     else: post_tax_total += amt
                     if amt > 0:
-                        monthly_ledger_data[m_idx].append([check['date'], d['name'], d['category'], -amt, "Payroll Deduction", None, None])
+                        add_to_ledger(m_idx, check['date'], d['name'], d['category'], -amt, "Payroll Deduction")
                 
                 taxable = max(0, gross - pre_tax_total)
                 taxes = self.calculator.calculate_taxes(gross, taxable, self.current_config)
@@ -310,7 +370,7 @@ class MainController:
                            ("Additional Tax", taxes.additional_tax)]
                 for t_name, t_amt in tax_map:
                     if t_amt > 0:
-                        monthly_ledger_data[m_idx].append([check['date'], t_name, "Tax", -t_amt, "Payroll Tax", None, None])
+                        add_to_ledger(m_idx, check['date'], t_name, "Tax", -t_amt, "Payroll Tax")
                 
                 net = gross - pre_tax_total - taxes.total_tax - post_tax_total
                 total_gross += gross
@@ -327,12 +387,11 @@ class MainController:
                 self.view.year_table.setItem(row, 4, QTableWidgetItem(f"${net:,.2f}"))
                 self.view.year_table.setItem(row, 5, QTableWidgetItem(f"${rem:,.2f}"))
 
-            # --- Budgeted Expenses mapped directly into Ledger ---
             for m_idx in range(12):
                 exp_date = datetime.date(self.current_year, m_idx + 1, 1) 
                 for e in expenses:
                     if e.is_global or e.month_idx == m_idx:
-                        monthly_ledger_data[m_idx].append([exp_date, e.name, e.category, -e.amount, "Budgeted Expense", None, None])
+                        add_to_ledger(m_idx, exp_date, e.name, e.category, -e.amount, "Budgeted Expense", e.id)
 
             with SessionLocal() as session:
                 db_transactions = session.query(Transaction).all()
@@ -340,7 +399,7 @@ class MainController:
                     t_m_idx = t.date.month - 1
                     if t.date.year == self.current_year and 0 <= t_m_idx <= 11:
                         category_name = t.category.name if t.category else "Uncategorized"
-                        monthly_ledger_data[t_m_idx].append([t.date, t.payee, category_name, t.amount, t.notes, t.id, t.receipt_path])
+                        add_to_ledger(t_m_idx, t.date, t.payee, category_name, t.amount, t.notes, t.id, t.receipt_path)
             
             for child in self.view.card_gross.findChildren(QLabel):
                 if child.objectName() == "StatValue": child.setText(f"${total_gross:,.2f}")
@@ -355,6 +414,11 @@ class MainController:
                 
                 model = TransactionModel(month_data)
                 ref['ledger'].setModel(model)
+                
+                # Setup specific width for Trashcan column so it doesn't stretch 
+                ref['ledger'].horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+                ref['ledger'].horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+                ref['ledger'].setColumnWidth(5, 40)
                 
                 net_income = 0.0
                 total_expenses = 0.0

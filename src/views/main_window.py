@@ -10,14 +10,13 @@ from views.theme_manager import THEMES
 from views.components import LedgerTableView
 
 class MainWindowView(QMainWindow):
-    # --- MVC SIGNALS ---
     theme_changed_signal = Signal(str)
     open_payroll_settings_signal = Signal()
     export_clipboard_signal = Signal()
     manage_deductions_signal = Signal()
     
-    # Updated to Add Transaction
     add_transaction_signal = Signal()
+    delete_row_signal = Signal(dict) # --- NEW SIGNAL ---
     
     receipt_dropped_signal = Signal(int, str)
     ledger_double_clicked_signal = Signal(object) 
@@ -35,7 +34,6 @@ class MainWindowView(QMainWindow):
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0,0,0,0)
 
-        # Header
         header = QFrame(objectName="Header")
         header.setFixedHeight(80)
         h_layout = QHBoxLayout(header)
@@ -100,12 +98,14 @@ class MainWindowView(QMainWindow):
         main_layout.addWidget(ledger_label)
 
         ledger_view = LedgerTableView()
-        ledger_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         ledger_view.verticalHeader().setVisible(False)
         ledger_view.setAlternatingRowColors(True)
         
         ledger_view.receipt_dropped.connect(self.receipt_dropped_signal.emit)
         ledger_view.doubleClicked.connect(self.ledger_double_clicked_signal.emit)
+        
+        # Connect delete signal
+        ledger_view.delete_requested.connect(self.delete_row_signal.emit)
         
         main_layout.addWidget(ledger_view, 1)
 
@@ -114,7 +114,6 @@ class MainWindowView(QMainWindow):
         btn_manage_ded = QPushButton("Manage Deductions")
         btn_manage_ded.clicked.connect(self.manage_deductions_signal.emit)
         
-        # New Button setup
         btn_add_tx = QPushButton("Add Transaction")
         btn_add_tx.clicked.connect(self.add_transaction_signal.emit)
         

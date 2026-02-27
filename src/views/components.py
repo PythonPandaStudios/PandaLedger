@@ -1,5 +1,6 @@
 import os
 import calendar
+import datetime
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QComboBox, QPushButton, QTableView
 from PySide6.QtCore import Signal, Qt
 
@@ -17,12 +18,32 @@ EXPENSE_CATEGORIES = [
 ]
 
 class LedgerTableView(QTableView):
-    receipt_dropped = Signal(int, str) # db_id, file_path
+    receipt_dropped = Signal(int, str) 
+    delete_requested = Signal(dict)
 
     def __init__(self):
         super().__init__()
         self.setAcceptDrops(True)
         self.setSortingEnabled(True)
+        self.clicked.connect(self.handle_click)
+        
+    def handle_click(self, index):
+        # Trigger when the Trashcan column (index 5) is clicked
+        if index.column() == 5:
+            model = self.model()
+            raw_data = model._data[index.row()]
+            
+            date = raw_data[0]
+            
+            row_data = {
+                'date': date,
+                'payee': raw_data[1],
+                'amount': raw_data[3],
+                'notes': raw_data[4],
+                'db_id': raw_data[5] if len(raw_data) > 5 else None,
+                'm_idx': date.month - 1 if isinstance(date, datetime.date) else 0
+            }
+            self.delete_requested.emit(row_data)
         
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -43,7 +64,6 @@ class LedgerTableView(QTableView):
                     index = self.indexAt(event.pos())
                     if index.isValid():
                         model = self.model()
-                        # Retrieve the db_id from our custom UserRole 
                         db_id = model.data(index, Qt.UserRole + 1)
                         if db_id is not None:
                             self.receipt_dropped.emit(db_id, file_path)
