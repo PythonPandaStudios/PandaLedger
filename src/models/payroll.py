@@ -69,6 +69,9 @@ class PayrollCalculator:
         sched_type = config.get('schedule', "Semi-Monthly")
         income_type = config.get('income_type', "Hourly")
 
+        # ... (Include the rest of your calculate_pay_dates method logic here exactly as it was) ...
+        # [Truncated for brevity, but copy the whole method from your original models.py]
+        
         if sched_type == "Weekly":
             d = date(year, 1, 1)
             while d.weekday() != 4: d += timedelta(days=1) 
@@ -115,10 +118,8 @@ class PayrollCalculator:
         num_periods = len(temp_dates)
         for item in temp_dates:
             if income_type == "Salary":
-                # FIX: Calculate exact period gross first, then derive rate for UI only
                 period_gross = rate / num_periods if num_periods > 0 else 0
                 eff_rate = period_gross / item['hours'] if item['hours'] > 0 else 0
-                # We store the exact calculated rate for math consistency in the UI
                 schedule.append({'date': item['date'], 'hours': item['hours'], 'rate': eff_rate})
             else:
                 schedule.append({'date': item['date'], 'hours': item['hours'], 'rate': rate})

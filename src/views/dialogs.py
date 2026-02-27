@@ -1,20 +1,22 @@
+import calendar
 import datetime
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QComboBox, 
-                               QLineEdit, QDialogButtonBox, QLabel, QWidget, QMessageBox)
-from PySide6.QtGui import QDoubleValidator, QCloseEvent
-from PySide6.QtCore import Qt
+                               QLineEdit, QDialogButtonBox, QLabel, QWidget, 
+                               QMessageBox, QScrollArea, QPushButton, QHBoxLayout, 
+                               QDateEdit, QRadioButton, QButtonGroup)
+from PySide6.QtGui import QDoubleValidator
+from PySide6.QtCore import Qt, Signal, QDate
+
+from views.components import EXPENSE_CATEGORIES
 
 class PayrollSettingsDialog(QDialog):
-    """Submenu for tax rates and pay schedules with dynamic period logic."""
     def __init__(self, parent=None, current_config=None):
         super().__init__(parent)
         self.setWindowTitle("Payroll & Tax Configuration")
         self.setMinimumWidth(450)
         self.config = current_config or {}
-        # Keep a copy of the original state for change detection
         self.initial_state = self.config.copy()
         
-        # Strict validation: 0.00 to 1,000,000.00 with 2 decimals
         self.num_validator = QDoubleValidator(0.0, 1000000.0, 2)
         self.num_validator.setNotation(QDoubleValidator.StandardNotation)
         
@@ -95,7 +97,6 @@ class PayrollSettingsDialog(QDialog):
             self.schedule_params_layout.addRow("Pay Day of Month:", self.m_day)
 
     def validate_and_accept(self):
-        """Ensure all numeric fields are valid before closing."""
         inputs = [self.rate_input, self.state_rate, self.fed_rate, self.add_tax_rate]
         for i in inputs:
             if not i.text() or i.text() == ".":
@@ -104,7 +105,6 @@ class PayrollSettingsDialog(QDialog):
         self.accept()
 
     def get_current_ui_data(self):
-        """Helper to scrape the current UI state without finalizing."""
         data = {
             "schedule": self.schedule_combo.currentText(),
             "state": self.state_combo.currentText(),
@@ -130,7 +130,6 @@ class PayrollSettingsDialog(QDialog):
         return data
 
     def handle_cancel(self):
-        """Checks for changes before allowing a silent close."""
         current_data = self.get_current_ui_data()
         has_changes = False
         for key, val in current_data.items():
@@ -151,3 +150,110 @@ class PayrollSettingsDialog(QDialog):
 
     def get_data(self):
         return self.get_current_ui_data()
+
+
+class ManageDeductionsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Payroll Deductions")
+        self.resize(500, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        self.scroll_area = QScrollArea(widgetResizable=True)
+        self.container = QWidget()
+        self.row_layout = QVBoxLayout(self.container)
+        self.row_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.container)
+        
+        layout.addWidget(self.scroll_area)
+        
+        btn_layout = QHBoxLayout()
+        self.add_btn = QPushButton("+ Add Deduction")
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.close_btn)
+        
+        layout.addLayout(btn_layout)
+
+
+class AddTransactionDialog(QDialog):
+    payee_edited_signal = Signal(str)
+    save_transaction_signal = Signal(dict)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Transaction")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        self.form = QFormLayout()
+        
+        # --- Type Radio Buttons ---
+        type_layout = QHBoxLayout()
+        self.radio_expense = QRadioButton("Expense")
+        self.radio_deposit = QRadioButton("Deposit")
+        self.radio_expense.setChecked(True) # Default to expense
+        self.btn_group = QButtonGroup()
+        self.btn_group.addButton(self.radio_expense)
+        self.btn_group.addButton(self.radio_deposit)
+        type_layout.addWidget(self.radio_expense)
+        type_layout.addWidget(self.radio_deposit)
+        self.form.addRow("Type:", type_layout)
+
+        # --- Scope Selection Combo ---
+        self.tx_scope = QComboBox()
+        self.tx_scope.addItem("One-Time (Use Date)")
+        self.tx_scope.addItem("Global (All Months)")
+        self.tx_scope.addItems(list(calendar.month_name)[1:])
+        self.tx_scope.currentIndexChanged.connect(self.toggle_date)
+        self.form.addRow("Scope:", self.tx_scope)
+        
+        self.tx_date = QDateEdit()
+        self.tx_date.setCalendarPopup(True)
+        self.tx_date.setDate(QDate.currentDate())
+        self.form.addRow("Date:", self.tx_date)
+        
+        self.tx_payee = QLineEdit()
+        self.tx_payee.textEdited.connect(self.payee_edited_signal.emit)
+        self.form.addRow("Payee:", self.tx_payee)
+        
+        self.tx_amount = QLineEdit()
+        self.form.addRow("Amount:", self.tx_amount)
+        
+        self.tx_category = QComboBox()
+        self.tx_category.addItems(EXPENSE_CATEGORIES)
+        self.form.addRow("Category:", self.tx_category)
+        
+        self.tx_account = QComboBox()
+        self.form.addRow("Account:", self.tx_account)
+        
+        self.tx_notes = QLineEdit()
+        self.form.addRow("Notes:", self.tx_notes)
+        
+        layout.addLayout(self.form)
+        
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.emit_save)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+        
+    def toggle_date(self):
+        # Disable the date widget if a recurring budget scope is selected
+        self.tx_date.setEnabled(self.tx_scope.currentIndex() == 0)
+        
+    def emit_save(self):
+        data = {
+            'tx_type': 'Expense' if self.radio_expense.isChecked() else 'Deposit',
+            'scope_idx': self.tx_scope.currentIndex(),
+            'date': self.tx_date.date().toPython(),
+            'payee': self.tx_payee.text(),
+            'amount': self.tx_amount.text(),
+            'category': self.tx_category.currentText(),
+            'account_id': self.tx_account.currentData(),
+            'notes': self.tx_notes.text()
+        }
+        self.save_transaction_signal.emit(data)
