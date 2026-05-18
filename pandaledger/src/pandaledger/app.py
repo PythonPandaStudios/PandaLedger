@@ -51,9 +51,7 @@ class PandaLedger(toga.App):
         self.refresh_ui()
 
     def create_stat_card(self, title, default_val, subtitle):
-        """
-        Creates a centered, transparent structural box for stats.
-        """
+        """Creates a centered, transparent structural box for stats."""
         card = toga.Box(style=Pack(direction=COLUMN, flex=1, align_items=CENTER, margin=5))
         
         lbl_title = toga.Label(title, style=Pack(font_size=10, font_weight='bold', margin_bottom=5, color="gray"))
@@ -127,7 +125,6 @@ class PandaLedger(toga.App):
         self.settings_window = toga.Window(title="Payroll Configuration", size=(450, 580))
         
         # --- Dynamic UI Inputs ---
-        # FIX: Toga Selection uses 'on_change', not 'on_select'
         self.input_pay_type = toga.Selection(
             items=["Hourly", "Salary"], 
             on_change=self.on_settings_change,
@@ -153,67 +150,71 @@ class PandaLedger(toga.App):
         self.lbl_yearly_savings = toga.Label("$0.00", style=Pack(font_weight='bold', color='blue', text_align='right', flex=1))
 
         # --- View Assembly ---
-        content = toga.Box(style=Pack(direction=COLUMN, padding=15))
+        content = toga.Box(style=Pack(direction=COLUMN, margin=15))
 
-        # Core Config
-        content.add(toga.Label("Pay Type:", style=Pack(padding_top=10)))
+        content.add(toga.Label("Pay Type:", style=Pack(margin_top=10)))
         content.add(self.input_pay_type)
 
-        content.add(toga.Label("Pay Schedule:", style=Pack(padding_top=10)))
+        content.add(toga.Label("Pay Schedule:", style=Pack(margin_top=10)))
         content.add(self.input_schedule)
 
-        row_rate = toga.Box(style=Pack(direction=ROW, padding_top=10))
+        row_rate = toga.Box(style=Pack(direction=ROW, margin_top=10))
         row_rate.add(toga.Label("Pay Rate / Salary ($):", style=Pack(width=180)))
         row_rate.add(self.input_rate)
         content.add(row_rate)
 
-        self.hours_box = toga.Box(style=Pack(direction=ROW, padding_top=10))
+        # Critical: Defines the object BEFORE inputs can trigger layout updates
+        self.hours_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
         self.hours_box.add(toga.Label("Hours Per Period:", style=Pack(width=180)))
         self.hours_box.add(self.input_hours)
         content.add(self.hours_box)
 
-        row_tax = toga.Box(style=Pack(direction=ROW, padding_top=10))
+        row_tax = toga.Box(style=Pack(direction=ROW, margin_top=10))
         row_tax.add(toga.Label("Estimated Net Tax %:", style=Pack(width=180)))
         row_tax.add(self.input_tax)
         content.add(row_tax)
 
-        row_sav = toga.Box(style=Pack(direction=ROW, padding_top=10))
+        row_sav = toga.Box(style=Pack(direction=ROW, margin_top=10))
         row_sav.add(toga.Label("Target Savings %:", style=Pack(width=180)))
         row_sav.add(self.input_savings)
         content.add(row_sav)
 
         # Real-Time Estimates Panel
-        estimates_box = toga.Box(style=Pack(direction=COLUMN, padding_top=25))
-        estimates_box.add(toga.Label("--- Live Yearly Projections ---", style=Pack(padding_bottom=10, font_weight='bold')))
+        estimates_box = toga.Box(style=Pack(direction=COLUMN, margin_top=25))
+        estimates_box.add(toga.Label("--- Live Yearly Projections ---", style=Pack(margin_bottom=10, font_weight='bold')))
 
-        row_gross = toga.Box(style=Pack(direction=ROW, padding_bottom=5))
+        row_gross = toga.Box(style=Pack(direction=ROW, margin_bottom=5))
         row_gross.add(toga.Label("Estimated Gross:", style=Pack(width=150)))
         row_gross.add(self.lbl_yearly_gross)
         estimates_box.add(row_gross)
 
-        row_net = toga.Box(style=Pack(direction=ROW, padding_bottom=5))
+        row_net = toga.Box(style=Pack(direction=ROW, margin_bottom=5))
         row_net.add(toga.Label("Estimated Net:", style=Pack(width=150)))
         row_net.add(self.lbl_yearly_net)
         estimates_box.add(row_net)
 
-        row_save = toga.Box(style=Pack(direction=ROW, padding_bottom=5))
+        row_save = toga.Box(style=Pack(direction=ROW, margin_bottom=5))
         row_save.add(toga.Label("Estimated Savings:", style=Pack(width=150)))
         row_save.add(self.lbl_yearly_savings)
         estimates_box.add(row_save)
 
         content.add(estimates_box)
 
-        save_btn = toga.Button("Secure & Save Config", on_press=self.handle_save_settings, style=Pack(padding_top=25))
+        save_btn = toga.Button("Secure & Save Config", on_press=self.handle_save_settings, style=Pack(margin_top=25))
         content.add(save_btn)
 
         self.settings_window.content = toga.ScrollContainer(content=content)
         
-        # Trigger initial mathematical map
+        # Trigger initial mathematical map safely
         self.on_settings_change(None)
         self.settings_window.show()
 
     def on_settings_change(self, widget):
         """Background worker that recalculates the math on keystrokes/selection."""
+        # Initial guard condition - prevents Toga 'on_change' initialization crashes
+        if not hasattr(self, 'hours_box'):
+            return
+
         try:
             # Dynamic Layout Toggle
             if self.input_pay_type.value == "Salary":
@@ -260,11 +261,12 @@ class PandaLedger(toga.App):
                 self.subtitle_label.text = f"{data['schedule']} | Tax: {data['tax_rate_percent']}%"
                 self.settings_window.close()
                 self.refresh_ui()
+                self.main_window.dialog(toga.InfoDialog("Success", "Settings secured to SQLite."))
             else:
-                self.main_window.error_dialog("Database Error", "Failed to secure settings to SQLite.")
+                self.main_window.dialog(toga.ErrorDialog("Database Error", "Failed to secure settings to SQLite."))
 
         except ValueError:
-            self.main_window.error_dialog("Validation Error", "Check that numeric fields only contain valid numbers.")
+            self.main_window.dialog(toga.ErrorDialog("Validation Error", "Check that numeric fields contain valid numbers."))
 
     def refresh_ui(self):
         """Pulls fresh database aggregations to paint the UI Tabs."""

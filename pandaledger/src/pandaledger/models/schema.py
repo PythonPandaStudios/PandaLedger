@@ -15,7 +15,6 @@ class Transaction(Base):
 # --- Pydantic Validation Model ---
 class TransactionCreate(BaseModel):
     date: date
-    # Pydantic validation prevents saving empty fields
     payee: str = Field(..., min_length=1, description="Payee cannot be empty")
     amount: float = Field(..., description="Amount must be a valid number")
 
@@ -24,12 +23,19 @@ class PayrollSettings(Base):
     __tablename__ = "payroll_settings"
     
     id = Column(Integer, primary_key=True, index=True)
-    pay_type = Column(String, default="Hourly")          # 'Hourly' or 'Salary'
-    schedule = Column(String, default="Semi-Monthly")    # 'Weekly', 'Bi-Weekly', 'Semi-Monthly', 'Monthly'
-    pay_rate = Column(Float, default=45.78)              # Hourly rate or Yearly Salary
-    hours_per_period = Column(Float, default=86.67)      # Avg hours per paycheck (Dynamic field)
-    tax_rate_percent = Column(Float, default=20.0)       # Estimated combined tax burden
-    savings_rate_percent = Column(Float, default=10.0)   # Savings goal for psychological momentum
+    
+    # --- V2 Dynamic Payroll Fields ---
+    pay_type = Column(String, default="Hourly")          
+    schedule = Column(String, default="Semi-Monthly")    
+    pay_rate = Column(Float, default=45.78)              
+    hours_per_period = Column(Float, default=86.67)      
+    tax_rate_percent = Column(Float, default=20.0)       
+    savings_rate_percent = Column(Float, default=10.0)   
+    
+    # --- V1 Legacy Fields (Preserved for SQLite NOT NULL constraints) ---
+    hourly_rate = Column(Float, nullable=False, default=0.0)
+    federal_tax_rate = Column(Float, nullable=False, default=0.0)
+    state_tax_rate = Column(Float, nullable=False, default=0.0)
 
 class PayrollSettingsUpdate(BaseModel):
     pay_type: str
