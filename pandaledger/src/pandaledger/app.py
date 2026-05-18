@@ -243,7 +243,8 @@ class PandaLedger(toga.App):
             self.lbl_yearly_net.text = "..."
             self.lbl_yearly_savings.text = "..."
 
-    def handle_save_settings(self, widget):
+    # Converted to an async handler to natively support Toga v0.4+ non-blocking dialogs
+    async def handle_save_settings(self, widget):
         """Commits the verified Toga data dict to the Controller."""
         try:
             data = {
@@ -261,12 +262,13 @@ class PandaLedger(toga.App):
                 self.subtitle_label.text = f"{data['schedule']} | Tax: {data['tax_rate_percent']}%"
                 self.settings_window.close()
                 self.refresh_ui()
-                self.main_window.dialog(toga.InfoDialog("Success", "Settings secured to SQLite."))
+                # Await the execution of the asynchronous dialog
+                await self.main_window.dialog(toga.InfoDialog("Success", "Settings secured to SQLite."))
             else:
-                self.main_window.dialog(toga.ErrorDialog("Database Error", "Failed to secure settings to SQLite."))
+                await self.main_window.dialog(toga.ErrorDialog("Database Error", "Failed to secure settings to SQLite."))
 
         except ValueError:
-            self.main_window.dialog(toga.ErrorDialog("Validation Error", "Check that numeric fields contain valid numbers."))
+            await self.main_window.dialog(toga.ErrorDialog("Validation Error", "Check that numeric fields contain valid numbers."))
 
     def refresh_ui(self):
         """Pulls fresh database aggregations to paint the UI Tabs."""
