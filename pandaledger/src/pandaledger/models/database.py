@@ -53,7 +53,12 @@ def init_database():
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 
-    # Bind models (assuming schema definition exists)
+    # --- THE FIX ---
+    # Explicitly import the schema here so SQLAlchemy's Base registers 
+    # the Transaction model BEFORE it attempts to create the tables.
+    import pandaledger.models.schema 
+    
+    # Bind models
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     
