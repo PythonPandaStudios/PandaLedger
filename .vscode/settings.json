@@ -1,3 +1,17 @@
 {
-    "python-envs.pythonProjects": []
+    "gemini.codeAssist.enableAutoCompletions": true,
+    "gemini.codeAssist.telemetry": false,
+    "gemini.codeAssist.indexing.maxFileSize": 5000000,
+    "gemini.codeAssist.indexing.exclude": [
+        "**/node_modules/**",
+        "**/.venv/**",
+        "**/__pycache__/**",
+        "**/*.sqlite3",
+        "**/assets/models/**",
+        "**/*_assets/**"
+    ],
+    "editor.inlineSuggest.enabled": true,
+    "python.formatting.provider": "black",
+    "python.analysis.typeCheckingMode": "strict",
+    "geminicodeassist.enableTelemetry": false
 }
