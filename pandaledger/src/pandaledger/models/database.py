@@ -57,6 +57,15 @@ def run_migrations(engine):
             if 'savings_rate_percent' not in existing_columns:
                 conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN savings_rate_percent FLOAT DEFAULT 10.0"))
                 logger.info("Migration: Injected 'savings_rate_percent' column into payroll_settings")
+            
+            # V3 Migrations (Dynamic Pay Dates)
+            if 'pay_day_1' not in existing_columns:
+                conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN pay_day_1 INTEGER DEFAULT 15"))
+                logger.info("Migration: Injected 'pay_day_1' column")
+                
+            if 'pay_day_2' not in existing_columns:
+                conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN pay_day_2 INTEGER DEFAULT 31"))
+                logger.info("Migration: Injected 'pay_day_2' column")
 
 def init_db():
     """

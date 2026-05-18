@@ -30,7 +30,11 @@ class PayrollSettings(Base):
     pay_rate = Column(Float, default=45.78)              
     hours_per_period = Column(Float, default=86.67)      
     tax_rate_percent = Column(Float, default=20.0)       
-    savings_rate_percent = Column(Float, default=10.0)   
+    savings_rate_percent = Column(Float, default=10.0)
+    
+    # --- V3 Exact Calendar Matching Fields ---
+    pay_day_1 = Column(Integer, default=15)
+    pay_day_2 = Column(Integer, default=31)
     
     # --- V1 Legacy Fields (Preserved for SQLite NOT NULL constraints) ---
     hourly_rate = Column(Float, nullable=False, default=0.0)
@@ -44,3 +48,5 @@ class PayrollSettingsUpdate(BaseModel):
     hours_per_period: float = Field(..., ge=0)
     tax_rate_percent: float = Field(..., ge=0, le=100)
     savings_rate_percent: float = Field(..., ge=0, le=100)
+    pay_day_1: int = Field(..., ge=1, le=31)
+    pay_day_2: int = Field(..., ge=1, le=31)

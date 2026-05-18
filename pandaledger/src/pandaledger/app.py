@@ -3,13 +3,10 @@ from toga.style import Pack
 from toga.style.pack import COLUMN, ROW, CENTER
 import calendar
 
-# Import our Brain (Pure Python Controller)
 from pandaledger.logic.main_controller import MainController
 
 class PandaLedger(toga.App):
     def startup(self):
-        """Main application boot sequence. Relies on OS Native Theming."""
-        # --- Initialize the Brain ---
         self.controller = MainController()
         
         self.main_window = toga.MainWindow(title=self.formal_name, size=(1200, 800))
@@ -23,9 +20,7 @@ class PandaLedger(toga.App):
         
         title_box.add(title_label, self.subtitle_label)
         
-        # Payroll Settings Button
         payroll_btn = toga.Button("Payroll Settings", on_press=self.show_payroll_settings, style=Pack(width=150))
-        
         header_box.add(title_box, payroll_btn)
         
         # --- 2. Main Navigation (Tabs) ---
@@ -46,18 +41,13 @@ class PandaLedger(toga.App):
         
         self.main_window.content = self.root_box
         self.main_window.show()
-        
-        # Pull fresh data from SQLite DB / Controller to populate the UI
         self.refresh_ui()
 
     def create_stat_card(self, title, default_val, subtitle):
-        """Creates a centered, transparent structural box for stats."""
         card = toga.Box(style=Pack(direction=COLUMN, flex=1, align_items=CENTER, margin=5))
-        
         lbl_title = toga.Label(title, style=Pack(font_size=10, font_weight='bold', margin_bottom=5, color="gray"))
         lbl_val = toga.Label(default_val, style=Pack(font_size=18, font_weight='bold'))
         lbl_sub = toga.Label(subtitle, style=Pack(font_size=10, margin_top=5, color="gray"))
-        
         card.add(lbl_title, lbl_val, lbl_sub)
         return card, lbl_val
 
@@ -65,14 +55,12 @@ class PandaLedger(toga.App):
         year_box = toga.Box(style=Pack(direction=COLUMN, margin=10))
         
         stats_box = toga.Box(style=Pack(direction=ROW, align_items=CENTER, margin_bottom=10, margin_top=10))
-        
         card_gross, self.lbl_gross = self.create_stat_card("EST. ANNUAL GROSS", "$0.00", "Annual Total")
         card_net, self.lbl_net = self.create_stat_card("EST. ANNUAL NET", "$0.00", "Take Home")
         card_sav, self.lbl_sav = self.create_stat_card("EST. ANNUAL SAVINGS", "$0.00", "After Expenses")
         
         div1 = toga.Box(style=Pack(width=1, height=60, background_color="gray", margin_left=15, margin_right=15))
         div2 = toga.Box(style=Pack(width=1, height=60, background_color="gray", margin_left=15, margin_right=15))
-        
         stats_box.add(card_gross, div1, card_net, div2, card_sav)
         
         self.year_table = toga.Table(columns=["Date", "Hrs", "Rate", "Gross", "Net", "Remaining"], style=Pack(flex=1))
@@ -83,7 +71,6 @@ class PandaLedger(toga.App):
 
     def setup_month_tab(self, m_idx, month_name):
         month_box = toga.Box(style=Pack(direction=COLUMN, margin=10))
-        
         ledger_label = toga.Label(f"{month_name} Ledger", style=Pack(margin_bottom=5, font_size=16, font_weight='bold'))
         month_box.add(ledger_label)
         
@@ -93,17 +80,12 @@ class PandaLedger(toga.App):
         
         bottom_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
         btn_box = toga.Box(style=Pack(direction=ROW, flex=1))
-        
         btn_manage_ded = toga.Button("Manage Deductions", style=Pack(margin_right=10))
         
         def inject_test_tx(widget):
             from pandaledger.logic.transaction_service import TransactionService
             import datetime
-            TransactionService.create(
-                tx_date=datetime.date.today(), 
-                payee="Test Sync Groceries", 
-                amount=-150.00
-            )
+            TransactionService.create(tx_date=datetime.date.today(), payee="Test Sync Groceries", amount=-150.00)
             self.refresh_ui()
 
         btn_add_tx = toga.Button("Add Transaction", on_press=inject_test_tx)
@@ -121,35 +103,29 @@ class PandaLedger(toga.App):
 
     def show_payroll_settings(self, widget):
         current_settings = self.controller.get_payroll_settings()
-
-        self.settings_window = toga.Window(title="Payroll Configuration", size=(450, 580))
+        self.settings_window = toga.Window(title="Payroll Configuration", size=(450, 650))
         
-        # --- Dynamic UI Inputs ---
-        self.input_pay_type = toga.Selection(
-            items=["Hourly", "Salary"], 
-            on_change=self.on_settings_change,
-            style=Pack(flex=1)
-        )
+        self.input_pay_type = toga.Selection(items=["Hourly", "Salary"], on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_pay_type.value = current_settings["pay_type"]
 
-        self.input_schedule = toga.Selection(
-            items=["Weekly", "Bi-Weekly", "Semi-Monthly", "Monthly"], 
-            on_change=self.on_settings_change,
-            style=Pack(flex=1)
-        )
+        self.input_schedule = toga.Selection(items=["Weekly", "Bi-Weekly", "Semi-Monthly", "Monthly"], on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_schedule.value = current_settings["schedule"]
 
         self.input_rate = toga.TextInput(value=str(current_settings["pay_rate"]), on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_hours = toga.TextInput(value=str(current_settings["hours_per_period"]), on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_tax = toga.TextInput(value=str(current_settings["tax_rate_percent"]), on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_savings = toga.TextInput(value=str(current_settings["savings_rate_percent"]), on_change=self.on_settings_change, style=Pack(flex=1))
+        
+        # New Pay Day Inputs for Calendar alignment
+        self.input_pd1 = toga.NumberInput(step="1", min_value=1, max_value=31, on_change=self.on_settings_change, style=Pack(flex=1))
+        self.input_pd1.value = current_settings["pay_day_1"]
+        self.input_pd2 = toga.NumberInput(step="1", min_value=1, max_value=31, on_change=self.on_settings_change, style=Pack(flex=1))
+        self.input_pd2.value = current_settings["pay_day_2"]
 
-        # --- Output Labels for Real-Time UI ---
         self.lbl_yearly_gross = toga.Label("$0.00", style=Pack(font_weight='bold', text_align='right', flex=1))
         self.lbl_yearly_net = toga.Label("$0.00", style=Pack(font_weight='bold', color='green', text_align='right', flex=1))
         self.lbl_yearly_savings = toga.Label("$0.00", style=Pack(font_weight='bold', color='blue', text_align='right', flex=1))
 
-        # --- View Assembly ---
         content = toga.Box(style=Pack(direction=COLUMN, margin=15))
 
         content.add(toga.Label("Pay Type:", style=Pack(margin_top=10)))
@@ -158,14 +134,28 @@ class PandaLedger(toga.App):
         content.add(toga.Label("Pay Schedule:", style=Pack(margin_top=10)))
         content.add(self.input_schedule)
 
+        # Dynamic Pay Date Boxes
+        self.payday_box = toga.Box(style=Pack(direction=COLUMN))
+        
+        row_pd1 = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        row_pd1.add(toga.Label("Primary Pay Day (e.g. 15):", style=Pack(width=180)))
+        row_pd1.add(self.input_pd1)
+        self.payday_box.add(row_pd1)
+        
+        row_pd2 = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        row_pd2.add(toga.Label("Secondary Pay Day (e.g. 31):", style=Pack(width=180)))
+        row_pd2.add(self.input_pd2)
+        self.payday_box.add(row_pd2)
+        
+        content.add(self.payday_box)
+
         row_rate = toga.Box(style=Pack(direction=ROW, margin_top=10))
         row_rate.add(toga.Label("Pay Rate / Salary ($):", style=Pack(width=180)))
         row_rate.add(self.input_rate)
         content.add(row_rate)
 
-        # Critical: Defines the object BEFORE inputs can trigger layout updates
         self.hours_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        self.hours_box.add(toga.Label("Hours Per Period:", style=Pack(width=180)))
+        self.hours_box.add(toga.Label("Hours (Weekly Fallback):", style=Pack(width=180)))
         self.hours_box.add(self.input_hours)
         content.add(self.hours_box)
 
@@ -179,7 +169,6 @@ class PandaLedger(toga.App):
         row_sav.add(self.input_savings)
         content.add(row_sav)
 
-        # Real-Time Estimates Panel
         estimates_box = toga.Box(style=Pack(direction=COLUMN, margin_top=25))
         estimates_box.add(toga.Label("--- Live Yearly Projections ---", style=Pack(margin_bottom=10, font_weight='bold')))
 
@@ -204,32 +193,34 @@ class PandaLedger(toga.App):
         content.add(save_btn)
 
         self.settings_window.content = toga.ScrollContainer(content=content)
-        
-        # Trigger initial mathematical map safely
         self.on_settings_change(None)
         self.settings_window.show()
 
     def on_settings_change(self, widget):
-        """Background worker that recalculates the math on keystrokes/selection."""
-        # Initial guard condition - prevents Toga 'on_change' initialization crashes
         if not hasattr(self, 'hours_box'):
             return
 
         try:
-            # Dynamic Layout Toggle
+            # UI Logic Toggles based on selected math framework
             if self.input_pay_type.value == "Salary":
                 self.hours_box.style.visibility = 'hidden'
             else:
                 self.hours_box.style.visibility = 'visible'
 
-            # Build a transient state map
+            if self.input_schedule.value in ["Semi-Monthly", "Monthly"]:
+                self.payday_box.style.visibility = 'visible'
+            else:
+                self.payday_box.style.visibility = 'hidden'
+
             temp_settings = {
                 'pay_type': self.input_pay_type.value,
                 'schedule': self.input_schedule.value,
                 'pay_rate': float(self.input_rate.value or 0),
                 'hours_per_period': float(self.input_hours.value or 0),
                 'tax_rate_percent': float(self.input_tax.value or 0),
-                'savings_rate_percent': float(self.input_savings.value or 0)
+                'savings_rate_percent': float(self.input_savings.value or 0),
+                'pay_day_1': int(self.input_pd1.value or 15),
+                'pay_day_2': int(self.input_pd2.value or 31)
             }
 
             estimates = self.controller.calculate_estimates(temp_settings)
@@ -243,9 +234,7 @@ class PandaLedger(toga.App):
             self.lbl_yearly_net.text = "..."
             self.lbl_yearly_savings.text = "..."
 
-    # Converted to an async handler to natively support Toga v0.4+ non-blocking dialogs
     async def handle_save_settings(self, widget):
-        """Commits the verified Toga data dict to the Controller."""
         try:
             data = {
                 'pay_type': self.input_pay_type.value,
@@ -253,7 +242,9 @@ class PandaLedger(toga.App):
                 'pay_rate': float(self.input_rate.value),
                 'hours_per_period': float(self.input_hours.value),
                 'tax_rate_percent': float(self.input_tax.value),
-                'savings_rate_percent': float(self.input_savings.value)
+                'savings_rate_percent': float(self.input_savings.value),
+                'pay_day_1': int(self.input_pd1.value),
+                'pay_day_2': int(self.input_pd2.value)
             }
             
             success = self.controller.save_payroll_settings(data)
@@ -262,7 +253,6 @@ class PandaLedger(toga.App):
                 self.subtitle_label.text = f"{data['schedule']} | Tax: {data['tax_rate_percent']}%"
                 self.settings_window.close()
                 self.refresh_ui()
-                # Await the execution of the asynchronous dialog
                 await self.main_window.dialog(toga.InfoDialog("Success", "Settings secured to SQLite."))
             else:
                 await self.main_window.dialog(toga.ErrorDialog("Database Error", "Failed to secure settings to SQLite."))
@@ -271,7 +261,6 @@ class PandaLedger(toga.App):
             await self.main_window.dialog(toga.ErrorDialog("Validation Error", "Check that numeric fields contain valid numbers."))
 
     def refresh_ui(self):
-        """Pulls fresh database aggregations to paint the UI Tabs."""
         stats = self.controller.get_annual_stats()
         self.lbl_gross.text = stats["gross"]
         self.lbl_net.text = stats["net"]
