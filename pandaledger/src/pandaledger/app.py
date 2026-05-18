@@ -131,41 +131,81 @@ class PandaLedger(toga.App):
         self.tabs.content.append(month_name, month_box)
 
     def show_payroll_settings(self, widget):
+        # 1. Fetch current settings from the Controller/Database
+        current_settings = self.controller.get_payroll_settings()
+
         self.settings_window = toga.Window(title="Payroll Settings", size=(400, 500))
         layout = toga.Box(style=Pack(direction=COLUMN, margin=20))
         
-        lbl_header1 = toga.Label("Pay Schedule Settings", style=Pack(font_size=14, font_weight='bold', margin_bottom=10))
-        layout.add(lbl_header1)
+        layout.add(toga.Label("Pay Schedule Settings", style=Pack(font_size=14, font_weight='bold', margin_bottom=10)))
         
+        # Schedule Dropdown
         row1 = toga.Box(style=Pack(direction=ROW, margin_bottom=10))
         lbl_sched = toga.Label("Schedule:", style=Pack(width=120))
-        row1.add(lbl_sched, toga.Selection(items=["Weekly", "Bi-Weekly", "Semi-Monthly", "Monthly"], style=Pack(flex=1)))
+        self.input_schedule = toga.Selection(items=["Weekly", "Bi-Weekly", "Semi-Monthly", "Monthly"], style=Pack(flex=1))
+        self.input_schedule.value = current_settings["schedule"]
+        row1.add(lbl_sched, self.input_schedule)
         
+        # Hourly Rate Input
         row2 = toga.Box(style=Pack(direction=ROW, margin_bottom=10))
         lbl_rate = toga.Label("Hourly Rate ($):", style=Pack(width=120))
-        row2.add(lbl_rate, toga.NumberInput(step="0.01", value=45.78, style=Pack(flex=1)))
+        self.input_rate = toga.NumberInput(step="0.01", style=Pack(flex=1))
+        self.input_rate.value = current_settings["hourly_rate"]
+        row2.add(lbl_rate, self.input_rate)
         
         layout.add(row1, row2)
         
-        lbl_header2 = toga.Label("Tax Estimates (%)", style=Pack(font_size=14, font_weight='bold', margin_top=15, margin_bottom=10))
-        layout.add(lbl_header2)
+        layout.add(toga.Label("Tax Estimates (%)", style=Pack(font_size=14, font_weight='bold', margin_top=15, margin_bottom=10)))
         
+        # Tax Inputs
         row3 = toga.Box(style=Pack(direction=ROW, margin_bottom=10))
         lbl_fed = toga.Label("Federal Rate:", style=Pack(width=120))
-        row3.add(lbl_fed, toga.NumberInput(step="0.1", value=12.0, style=Pack(flex=1)))
+        self.input_fed_tax = toga.NumberInput(step="0.1", style=Pack(flex=1))
+        self.input_fed_tax.value = current_settings["federal_tax_rate"]
+        row3.add(lbl_fed, self.input_fed_tax)
 
         row4 = toga.Box(style=Pack(direction=ROW, margin_bottom=10))
         lbl_state = toga.Label("State Rate:", style=Pack(width=120))
-        row4.add(lbl_state, toga.NumberInput(step="0.1", value=4.4, style=Pack(flex=1)))
+        self.input_state_tax = toga.NumberInput(step="0.1", style=Pack(flex=1))
+        self.input_state_tax.value = current_settings["state_tax_rate"]
+        row4.add(lbl_state, self.input_state_tax)
         
         layout.add(row3, row4)
         
-        save_btn = toga.Button("Save Configuration", style=Pack(margin_top=20))
-        save_btn.on_press = lambda x: self.settings_window.close() 
+        # Save Button wired to our new handler
+        save_btn = toga.Button("Save Configuration", on_press=self.handle_save_settings, style=Pack(margin_top=20))
         layout.add(save_btn)
         
         self.settings_window.content = layout
         self.settings_window.show()
+
+    def handle_save_settings(self, widget):
+        """Extracts data from the Toga window and sends it to the Controller."""
+        try:
+            # Safely extract and cast values from Toga NumberInputs
+            raw_schedule = self.input_schedule.value
+            raw_rate = float(self.input_rate.value) if self.input_rate.value else 0.0
+            raw_fed = float(self.input_fed_tax.value) if self.input_fed_tax.value else 0.0
+            raw_state = float(self.input_state_tax.value) if self.input_state_tax.value else 0.0
+
+            # Pass to Controller
+            success = self.controller.save_payroll_settings(
+                schedule=raw_schedule, 
+                rate=raw_rate, 
+                fed_tax=raw_fed, 
+                state_tax=raw_state
+            )
+
+            if success:
+                # Update the subtitle on the main window dynamically
+                self.subtitle_label.text = f"{raw_schedule} | Tax: {raw_fed + raw_state}%"
+                self.settings_window.close()
+                self.refresh_ui() # Recalculate tables based on new settings
+            else:
+                self.main_window.error_dialog("Save Failed", "Could not write to the database.")
+
+        except ValueError:
+            self.main_window.error_dialog("Input Error", "Please enter valid numbers.")
 
     def refresh_ui(self):
         """
