@@ -23,8 +23,7 @@ class MainController:
     def generate_pay_schedule(self, custom_settings: dict = None) -> list:
         """
         Generates a 12-month calendar mapping for the current year.
-        Determines exact hour chunks (80, 88, 96) for hourly workers.
-        Returns raw mathematical representations for the UI to format.
+        Uses lag-detection to accurately trace previous month hours to current month paydays.
         """
         settings = custom_settings if custom_settings else self.get_payroll_settings()
         year = datetime.date.today().year
@@ -37,63 +36,91 @@ class MainController:
         pay_rate = float(settings.get("pay_rate", 0.0))
         tax_rate = float(settings.get("tax_rate_percent", 0.0))
         
-        # Safe casting for day integers
-        pd1 = int(settings.get("pay_day_1", 15))
-        pd2 = int(settings.get("pay_day_2", 31))
+        pd1 = int(settings.get("pay_day_1", 7))
+        pd2 = int(settings.get("pay_day_2", 22))
+        ppe1 = int(settings.get("pay_period_end_1", 15))
+        ppe2 = int(settings.get("pay_period_end_2", 31))
 
-        if schedule in ["Semi-Monthly", "Monthly"]:
+        if schedule == "Semi-Monthly":
+            # Lag Detection: If Payday 1 (e.g. 7th) is before Period End 1 (e.g. 15th), 
+            # we know the paycheck covers the end of the previous month.
+            is_lagged = pd1 < ppe1
+            
             for month in range(1, 13):
                 _, last_day = calendar.monthrange(year, month)
                 
-                # --- PERIOD 1 ---
-                d1 = min(pd1, last_day) # Prevents Feb 30th errors
-                date1 = datetime.date(year, month, d1)
-                start1 = datetime.date(year, month, 1)
+                if is_lagged:
+                    # Period 1 (Covers 2nd half of previous month -> Paid on pd1)
+                    pm = 12 if month == 1 else month - 1
+                    py = year - 1 if month == 1 else year
+                    _, p_last = calendar.monthrange(py, pm)
+                    
+                    start1 = datetime.date(py, pm, min(ppe1, p_last) + 1)
+                    end1 = datetime.date(py, pm, min(ppe2, p_last)) # Usually EOM
+                    date1 = datetime.date(year, month, min(pd1, last_day))
+                    
+                    # Period 2 (Covers 1st half of current month -> Paid on pd2)
+                    start2 = datetime.date(year, month, 1)
+                    end2 = datetime.date(year, month, min(ppe1, last_day))
+                    date2 = datetime.date(year, month, min(pd2, last_day))
+                    
+                else:
+                    # No Lag: Paid in the same month periods end (e.g., Paid 15th and 31st)
+                    start1 = datetime.date(year, month, 1)
+                    end1 = datetime.date(year, month, min(ppe1, last_day))
+                    date1 = datetime.date(year, month, min(pd1, last_day))
+                    
+                    start2 = datetime.date(year, month, min(ppe1, last_day) + 1)
+                    end2 = datetime.date(year, month, min(ppe2, last_day))
+                    date2 = datetime.date(year, month, min(pd2, last_day))
                 
-                if schedule == "Semi-Monthly":
-                    # Exact M-F working hours calculation
-                    hours1 = self._count_weekdays(start1, date1) * 8.0
-                    gross1 = (hours1 * pay_rate) if pay_type == "Hourly" else (pay_rate / 24)
-                    net1 = gross1 * (1.0 - tax_rate / 100.0)
-                    cumulative_net += net1
+                # Calculate the exact blocks
+                for start, end, p_date in [(start1, end1, date1), (start2, end2, date2)]:
+                    # Safety check for anomalous dates
+                    if start > end: continue
+                        
+                    hours = self._count_weekdays(start, end) * 8.0
+                    gross = (hours * pay_rate) if pay_type == "Hourly" else (pay_rate / 24)
+                    net = gross * (1.0 - tax_rate / 100.0)
+                    cumulative_net += net
                     
                     schedule_data.append({
-                        "date": date1, "hours": hours1, "rate": pay_rate, 
-                        "gross": gross1, "net": net1, "remaining": cumulative_net
+                        "date": p_date, "hours": hours, "rate": pay_rate, 
+                        "gross": gross, "net": net, "remaining": cumulative_net
                     })
                     
-                    # --- PERIOD 2 ---
-                    d2 = min(pd2, last_day)
-                    date2 = datetime.date(year, month, d2)
-                    start2 = date1 + datetime.timedelta(days=1)
+        elif schedule == "Monthly":
+            is_lagged = pd1 < ppe2
+            for month in range(1, 13):
+                _, last_day = calendar.monthrange(year, month)
+                
+                if is_lagged:
+                    pm = 12 if month == 1 else month - 1
+                    py = year - 1 if month == 1 else year
+                    _, p_last = calendar.monthrange(py, pm)
                     
-                    hours2 = self._count_weekdays(start2, date2) * 8.0 if start2 <= date2 else 0.0
-                    gross2 = (hours2 * pay_rate) if pay_type == "Hourly" else (pay_rate / 24)
-                    net2 = gross2 * (1.0 - tax_rate / 100.0)
-                    cumulative_net += net2
-                    
-                    schedule_data.append({
-                        "date": date2, "hours": hours2, "rate": pay_rate, 
-                        "gross": gross2, "net": net2, "remaining": cumulative_net
-                    })
-                    
-                elif schedule == "Monthly":
-                    end_of_month = datetime.date(year, month, last_day)
-                    hours1 = self._count_weekdays(start1, end_of_month) * 8.0
-                    gross1 = (hours1 * pay_rate) if pay_type == "Hourly" else (pay_rate / 12)
-                    net1 = gross1 * (1.0 - tax_rate / 100.0)
-                    cumulative_net += net1
-                    
-                    schedule_data.append({
-                        "date": date1, "hours": hours1, "rate": pay_rate, 
-                        "gross": gross1, "net": net1, "remaining": cumulative_net
-                    })
-                    
+                    start = datetime.date(py, pm, 1)
+                    end = datetime.date(py, pm, min(ppe2, p_last))
+                    date_val = datetime.date(year, month, min(pd1, last_day))
+                else:
+                    start = datetime.date(year, month, 1)
+                    end = datetime.date(year, month, min(ppe2, last_day))
+                    date_val = datetime.date(year, month, min(pd1, last_day))
+
+                hours = self._count_weekdays(start, end) * 8.0
+                gross = (hours * pay_rate) if pay_type == "Hourly" else (pay_rate / 12)
+                net = gross * (1.0 - tax_rate / 100.0)
+                cumulative_net += net
+                
+                schedule_data.append({
+                    "date": date_val, "hours": hours, "rate": pay_rate, 
+                    "gross": gross, "net": net, "remaining": cumulative_net
+                })
         else:
-            # Fallback block for fixed weekly/bi-weekly rotations
+            # Fixed interval fallback (Weekly/Bi-Weekly)
             periods = 52 if schedule == "Weekly" else 26
             hours = float(settings.get("hours_per_period", 80.0))
-            start_date = datetime.date(year, 1, 1)
+            start_date = datetime.date(year, 1, 1) 
             days_step = 7 if schedule == "Weekly" else 14
             
             for i in range(periods):
@@ -109,7 +136,6 @@ class MainController:
         return schedule_data
 
     def calculate_estimates(self, custom_settings: dict = None) -> dict:
-        """Derives exact yearly projections based on the generated calendar schedule."""
         settings = custom_settings if custom_settings else self.get_payroll_settings()
         schedule = self.generate_pay_schedule(settings)
         savings_rate = float(settings.get("savings_rate_percent", 0.0))
@@ -133,7 +159,6 @@ class MainController:
         }
 
     def get_year_overview_table(self) -> list[tuple]:
-        """Maps the raw calendar engine output perfectly into Toga string rows."""
         raw_schedule = self.generate_pay_schedule()
         return [
             (
@@ -177,7 +202,9 @@ class MainController:
                 "tax_rate_percent": settings.tax_rate_percent,
                 "savings_rate_percent": settings.savings_rate_percent,
                 "pay_day_1": settings.pay_day_1,
-                "pay_day_2": settings.pay_day_2
+                "pay_day_2": settings.pay_day_2,
+                "pay_period_end_1": settings.pay_period_end_1,
+                "pay_period_end_2": settings.pay_period_end_2
             }
         else:
             return {
@@ -187,8 +214,10 @@ class MainController:
                 "hours_per_period": 86.67,
                 "tax_rate_percent": 20.0,
                 "savings_rate_percent": 10.0,
-                "pay_day_1": 15,
-                "pay_day_2": 31
+                "pay_day_1": 7,
+                "pay_day_2": 22,
+                "pay_period_end_1": 15,
+                "pay_period_end_2": 31
             }
 
     def save_payroll_settings(self, data: dict) -> bool:
@@ -208,6 +237,8 @@ class MainController:
             settings.savings_rate_percent = float(data.get('savings_rate_percent', settings.savings_rate_percent))
             settings.pay_day_1 = int(data.get('pay_day_1', settings.pay_day_1))
             settings.pay_day_2 = int(data.get('pay_day_2', settings.pay_day_2))
+            settings.pay_period_end_1 = int(data.get('pay_period_end_1', settings.pay_period_end_1))
+            settings.pay_period_end_2 = int(data.get('pay_period_end_2', settings.pay_period_end_2))
             
             session.commit()
             session.close()

@@ -8,12 +8,10 @@ from pandaledger.logic.main_controller import MainController
 class PandaLedger(toga.App):
     def startup(self):
         self.controller = MainController()
-        
         self.main_window = toga.MainWindow(title=self.formal_name, size=(1200, 800))
         
         # --- 1. Global Header ---
         header_box = toga.Box(style=Pack(direction=ROW, margin=15, align_items=CENTER))
-        
         title_box = toga.Box(style=Pack(direction=COLUMN, flex=1))
         title_label = toga.Label("PandaLedger", style=Pack(font_size=20, font_weight='bold'))
         self.subtitle_label = toga.Label("Semi-Monthly | Colorado Tax Rules", style=Pack(font_size=12, color="gray"))
@@ -25,7 +23,6 @@ class PandaLedger(toga.App):
         
         # --- 2. Main Navigation (Tabs) ---
         self.tabs = toga.OptionContainer(style=Pack(flex=1))
-        
         self.setup_year_tab()
         
         self.month_names = list(calendar.month_name)[1:]
@@ -53,8 +50,8 @@ class PandaLedger(toga.App):
 
     def setup_year_tab(self):
         year_box = toga.Box(style=Pack(direction=COLUMN, margin=10))
-        
         stats_box = toga.Box(style=Pack(direction=ROW, align_items=CENTER, margin_bottom=10, margin_top=10))
+        
         card_gross, self.lbl_gross = self.create_stat_card("EST. ANNUAL GROSS", "$0.00", "Annual Total")
         card_net, self.lbl_net = self.create_stat_card("EST. ANNUAL NET", "$0.00", "Take Home")
         card_sav, self.lbl_sav = self.create_stat_card("EST. ANNUAL SAVINGS", "$0.00", "After Expenses")
@@ -103,7 +100,7 @@ class PandaLedger(toga.App):
 
     def show_payroll_settings(self, widget):
         current_settings = self.controller.get_payroll_settings()
-        self.settings_window = toga.Window(title="Payroll Configuration", size=(450, 650))
+        self.settings_window = toga.Window(title="Payroll Configuration", size=(450, 750))
         
         self.input_pay_type = toga.Selection(items=["Hourly", "Salary"], on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_pay_type.value = current_settings["pay_type"]
@@ -116,7 +113,13 @@ class PandaLedger(toga.App):
         self.input_tax = toga.TextInput(value=str(current_settings["tax_rate_percent"]), on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_savings = toga.TextInput(value=str(current_settings["savings_rate_percent"]), on_change=self.on_settings_change, style=Pack(flex=1))
         
-        # FIX: Toga NumberInput uses 'min' and 'max', not 'min_value' or 'max_value'
+        # New Period End Inputs
+        self.input_ppe1 = toga.NumberInput(step=1, min=1, max=31, on_change=self.on_settings_change, style=Pack(flex=1))
+        self.input_ppe1.value = current_settings["pay_period_end_1"]
+        self.input_ppe2 = toga.NumberInput(step=1, min=1, max=31, on_change=self.on_settings_change, style=Pack(flex=1))
+        self.input_ppe2.value = current_settings["pay_period_end_2"]
+
+        # Pay Day Inputs
         self.input_pd1 = toga.NumberInput(step=1, min=1, max=31, on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_pd1.value = current_settings["pay_day_1"]
         self.input_pd2 = toga.NumberInput(step=1, min=1, max=31, on_change=self.on_settings_change, style=Pack(flex=1))
@@ -134,16 +137,26 @@ class PandaLedger(toga.App):
         content.add(toga.Label("Pay Schedule:", style=Pack(margin_top=10)))
         content.add(self.input_schedule)
 
-        # Dynamic Pay Date Boxes
+        # Dynamic Pay Date & Period End Boxes
         self.payday_box = toga.Box(style=Pack(direction=COLUMN))
         
+        row_ppe1 = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        row_ppe1.add(toga.Label("Period 1 End Date (e.g. 15):", style=Pack(width=180)))
+        row_ppe1.add(self.input_ppe1)
+        self.payday_box.add(row_ppe1)
+        
+        row_ppe2 = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        row_ppe2.add(toga.Label("Period 2 End Date (e.g. 31):", style=Pack(width=180)))
+        row_ppe2.add(self.input_ppe2)
+        self.payday_box.add(row_ppe2)
+
         row_pd1 = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        row_pd1.add(toga.Label("Primary Pay Day (e.g. 15):", style=Pack(width=180)))
+        row_pd1.add(toga.Label("Primary Pay Day (e.g. 7):", style=Pack(width=180)))
         row_pd1.add(self.input_pd1)
         self.payday_box.add(row_pd1)
         
         row_pd2 = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        row_pd2.add(toga.Label("Secondary Pay Day (e.g. 31):", style=Pack(width=180)))
+        row_pd2.add(toga.Label("Secondary Pay Day (e.g. 22):", style=Pack(width=180)))
         row_pd2.add(self.input_pd2)
         self.payday_box.add(row_pd2)
         
@@ -201,7 +214,6 @@ class PandaLedger(toga.App):
             return
 
         try:
-            # UI Logic Toggles based on selected math framework
             if self.input_pay_type.value == "Salary":
                 self.hours_box.style.visibility = 'hidden'
             else:
@@ -219,8 +231,10 @@ class PandaLedger(toga.App):
                 'hours_per_period': float(self.input_hours.value or 0),
                 'tax_rate_percent': float(self.input_tax.value or 0),
                 'savings_rate_percent': float(self.input_savings.value or 0),
-                'pay_day_1': int(self.input_pd1.value or 15),
-                'pay_day_2': int(self.input_pd2.value or 31)
+                'pay_day_1': int(self.input_pd1.value or 7),
+                'pay_day_2': int(self.input_pd2.value or 22),
+                'pay_period_end_1': int(self.input_ppe1.value or 15),
+                'pay_period_end_2': int(self.input_ppe2.value or 31)
             }
 
             estimates = self.controller.calculate_estimates(temp_settings)
@@ -244,7 +258,9 @@ class PandaLedger(toga.App):
                 'tax_rate_percent': float(self.input_tax.value),
                 'savings_rate_percent': float(self.input_savings.value),
                 'pay_day_1': int(self.input_pd1.value),
-                'pay_day_2': int(self.input_pd2.value)
+                'pay_day_2': int(self.input_pd2.value),
+                'pay_period_end_1': int(self.input_ppe1.value),
+                'pay_period_end_2': int(self.input_ppe2.value)
             }
             
             success = self.controller.save_payroll_settings(data)
