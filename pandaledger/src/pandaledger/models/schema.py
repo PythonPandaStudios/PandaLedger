@@ -18,3 +18,19 @@ class TransactionCreate(BaseModel):
     # Pydantic validation prevents saving empty fields
     payee: str = Field(..., min_length=1, description="Payee cannot be empty")
     amount: float = Field(..., description="Amount must be a valid number")
+
+# --- Payroll Settings Models ---
+class PayrollSettings(Base):
+    __tablename__ = "payroll_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    schedule = Column(String, nullable=False, default="Semi-Monthly")
+    hourly_rate = Column(Float, nullable=False, default=0.0)
+    federal_tax_rate = Column(Float, nullable=False, default=0.0)
+    state_tax_rate = Column(Float, nullable=False, default=0.0)
+
+class PayrollSettingsUpdate(BaseModel):
+    schedule: str
+    hourly_rate: float = Field(..., ge=0)
+    federal_tax_rate: float = Field(..., ge=0, le=100)
+    state_tax_rate: float = Field(..., ge=0, le=100)
