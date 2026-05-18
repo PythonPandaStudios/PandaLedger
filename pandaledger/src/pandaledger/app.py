@@ -19,7 +19,6 @@ class PandaLedger(toga.App):
         header_box.add(title_box)
 
         # --- 2. Menu Bar Commands ---
-        # Grouped under the application menu (PandaLedger)
         settings_cmd = toga.Command(
             self.show_payroll_settings,
             text="Payroll Settings",
@@ -139,31 +138,35 @@ class PandaLedger(toga.App):
         row_sav.add(self.input_savings)
         content.add(row_sav)
 
-        # --- Reordered Payday Info (Now below Savings) ---
+        # --- Base Payday Box (Used by both Monthly and Semi-Monthly) ---
         self.payday_box = toga.Box(style=Pack(direction=COLUMN))
         self.payday_box.add(toga.Label("--- Calendar Period Sync ---", style=Pack(margin_top=15, font_weight='bold')))
         
         row_ppe1 = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        row_ppe1.add(toga.Label("Period 1 End Date:", style=Pack(width=180)))
-        row_ppe1.add(self.input_ppe1)
+        self.lbl_ppe1 = toga.Label("Period 1 End Date:", style=Pack(width=180))
+        row_ppe1.add(self.lbl_ppe1, self.input_ppe1)
         self.payday_box.add(row_ppe1)
         
-        row_ppe2 = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        row_ppe2.add(toga.Label("Period 2 End Date:", style=Pack(width=180)))
-        row_ppe2.add(self.input_ppe2)
-        self.payday_box.add(row_ppe2)
-
         row_pd1 = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        row_pd1.add(toga.Label("Primary Pay Day:", style=Pack(width=180)))
-        row_pd1.add(self.input_pd1)
+        self.lbl_pd1 = toga.Label("Primary Pay Day:", style=Pack(width=180))
+        row_pd1.add(self.lbl_pd1, self.input_pd1)
         self.payday_box.add(row_pd1)
         
+        # --- Secondary Payday Box (Used strictly by Semi-Monthly) ---
+        self.secondary_payday_box = toga.Box(style=Pack(direction=COLUMN))
+        
+        row_ppe2 = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        row_ppe2.add(toga.Label("Period 2 End Date:", style=Pack(width=180)), self.input_ppe2)
+        self.secondary_payday_box.add(row_ppe2)
+        
         row_pd2 = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        row_pd2.add(toga.Label("Secondary Pay Day:", style=Pack(width=180)))
-        row_pd2.add(self.input_pd2)
-        self.payday_box.add(row_pd2)
+        row_pd2.add(toga.Label("Secondary Pay Day:", style=Pack(width=180)), self.input_pd2)
+        self.secondary_payday_box.add(row_pd2)
+        
+        self.payday_box.add(self.secondary_payday_box)
         content.add(self.payday_box)
 
+        # Projections Box
         estimates_box = toga.Box(style=Pack(direction=COLUMN, margin_top=25))
         estimates_box.add(toga.Label("--- Live Yearly Projections ---", style=Pack(margin_bottom=10, font_weight='bold')))
         row_gross = toga.Box(style=Pack(direction=ROW, margin_bottom=5))
@@ -188,36 +191,61 @@ class PandaLedger(toga.App):
         self.settings_window.show()
 
     def on_settings_change(self, widget):
+        # Layout instantiation guard
         if not hasattr(self, 'hours_box'): return
+        
         try:
-            # Dynamic Height Logic
-            new_height = 550
+            # Baseline window height
+            new_height = 490
+            
             if self.input_pay_type.value == "Salary":
                 self.hours_box.style.visibility = 'hidden'
             else:
                 self.hours_box.style.visibility = 'visible'
                 new_height += 40
 
-            if self.input_schedule.value in ["Semi-Monthly", "Monthly"]:
+            schedule = self.input_schedule.value
+
+            if schedule == "Semi-Monthly":
                 self.payday_box.style.visibility = 'visible'
-                new_height += 200
-            else:
+                self.secondary_payday_box.style.visibility = 'visible'
+                self.lbl_ppe1.text = "Period 1 End Date:"
+                self.lbl_pd1.text = "Primary Pay Day:"
+                new_height += 190
+                
+            elif schedule == "Monthly":
+                self.payday_box.style.visibility = 'visible'
+                self.secondary_payday_box.style.visibility = 'hidden'
+                self.lbl_ppe1.text = "Period End Date:"
+                self.lbl_pd1.text = "Pay Day:"
+                new_height += 90
+                
+            else: # Weekly / Bi-Weekly
                 self.payday_box.style.visibility = 'hidden'
 
-            # Update Window Size Sculpting
+            # Dynamically push boundaries mapping to Toga OS-window constraints
             self.settings_window.size = (450, new_height)
 
+            # Map the transient dictionary securely
             temp_settings = {
-                'pay_type': self.input_pay_type.value, 'schedule': self.input_schedule.value,
-                'pay_rate': float(self.input_rate.value or 0), 'hours_per_period': float(self.input_hours.value or 0),
-                'tax_rate_percent': float(self.input_tax.value or 0), 'savings_rate_percent': float(self.input_savings.value or 0),
-                'pay_day_1': int(self.input_pd1.value or 7), 'pay_day_2': int(self.input_pd2.value or 22),
-                'pay_period_end_1': int(self.input_ppe1.value or 15), 'pay_period_end_2': int(self.input_ppe2.value or 31)
+                'pay_type': self.input_pay_type.value, 
+                'schedule': self.input_schedule.value,
+                'pay_rate': float(self.input_rate.value or 0), 
+                'hours_per_period': float(self.input_hours.value or 0),
+                'tax_rate_percent': float(self.input_tax.value or 0), 
+                'savings_rate_percent': float(self.input_savings.value or 0),
+                'pay_day_1': int(self.input_pd1.value or 1), 
+                'pay_day_2': int(self.input_pd2.value or 1),
+                'pay_period_end_1': int(self.input_ppe1.value or 1), 
+                'pay_period_end_2': int(self.input_ppe2.value or 1)
             }
+            
             estimates = self.controller.calculate_estimates(temp_settings)
+            
             self.lbl_yearly_gross.text = f"${estimates['yearly_gross']:,.2f}"
             self.lbl_yearly_net.text = f"${estimates['yearly_net']:,.2f}"
             self.lbl_yearly_savings.text = f"${estimates['yearly_savings']:,.2f}"
+            
         except ValueError:
             self.lbl_yearly_gross.text = "..."
             self.lbl_yearly_net.text = "..."
@@ -226,11 +254,16 @@ class PandaLedger(toga.App):
     async def handle_save_settings(self, widget):
         try:
             data = {
-                'pay_type': self.input_pay_type.value, 'schedule': self.input_schedule.value,
-                'pay_rate': float(self.input_rate.value), 'hours_per_period': float(self.input_hours.value),
-                'tax_rate_percent': float(self.input_tax.value), 'savings_rate_percent': float(self.input_savings.value),
-                'pay_day_1': int(self.input_pd1.value), 'pay_day_2': int(self.input_pd2.value),
-                'pay_period_end_1': int(self.input_ppe1.value), 'pay_period_end_2': int(self.input_ppe2.value)
+                'pay_type': self.input_pay_type.value, 
+                'schedule': self.input_schedule.value,
+                'pay_rate': float(self.input_rate.value), 
+                'hours_per_period': float(self.input_hours.value),
+                'tax_rate_percent': float(self.input_tax.value), 
+                'savings_rate_percent': float(self.input_savings.value),
+                'pay_day_1': int(self.input_pd1.value), 
+                'pay_day_2': int(self.input_pd2.value),
+                'pay_period_end_1': int(self.input_ppe1.value), 
+                'pay_period_end_2': int(self.input_ppe2.value)
             }
             success = self.controller.save_payroll_settings(data)
             if success:

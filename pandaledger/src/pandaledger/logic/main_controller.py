@@ -75,7 +75,8 @@ class MainController:
                     })
                     
         elif schedule == "Monthly":
-            is_lagged = pd1 < ppe2
+            # For a monthly schedule, we only use the primary inputs (pd1 and ppe1)
+            is_lagged = pd1 < ppe1
             for month in range(1, 13):
                 _, last_day = calendar.monthrange(year, month)
                 if is_lagged:
@@ -83,11 +84,11 @@ class MainController:
                     py = year - 1 if month == 1 else year
                     _, p_last = calendar.monthrange(py, pm)
                     start = datetime.date(py, pm, 1)
-                    end = datetime.date(py, pm, min(ppe2, p_last))
+                    end = datetime.date(py, pm, min(ppe1, p_last))
                     date_val = datetime.date(year, month, min(pd1, last_day))
                 else:
                     start = datetime.date(year, month, 1)
-                    end = datetime.date(year, month, min(ppe2, last_day))
+                    end = datetime.date(year, month, min(ppe1, last_day))
                     date_val = datetime.date(year, month, min(pd1, last_day))
 
                 hours = self._count_weekdays(start, end) * 8.0
