@@ -127,16 +127,17 @@ class PandaLedger(toga.App):
         self.settings_window = toga.Window(title="Payroll Configuration", size=(450, 580))
         
         # --- Dynamic UI Inputs ---
+        # FIX: Toga Selection uses 'on_change', not 'on_select'
         self.input_pay_type = toga.Selection(
             items=["Hourly", "Salary"], 
-            on_select=self.on_settings_change,
+            on_change=self.on_settings_change,
             style=Pack(flex=1)
         )
         self.input_pay_type.value = current_settings["pay_type"]
 
         self.input_schedule = toga.Selection(
             items=["Weekly", "Bi-Weekly", "Semi-Monthly", "Monthly"], 
-            on_select=self.on_settings_change,
+            on_change=self.on_settings_change,
             style=Pack(flex=1)
         )
         self.input_schedule.value = current_settings["schedule"]
