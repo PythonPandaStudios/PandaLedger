@@ -116,10 +116,10 @@ class PandaLedger(toga.App):
         self.input_tax = toga.TextInput(value=str(current_settings["tax_rate_percent"]), on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_savings = toga.TextInput(value=str(current_settings["savings_rate_percent"]), on_change=self.on_settings_change, style=Pack(flex=1))
         
-        # New Pay Day Inputs for Calendar alignment
-        self.input_pd1 = toga.NumberInput(step="1", min_value=1, max_value=31, on_change=self.on_settings_change, style=Pack(flex=1))
+        # FIX: Toga NumberInput uses 'min' and 'max', not 'min_value' or 'max_value'
+        self.input_pd1 = toga.NumberInput(step=1, min=1, max=31, on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_pd1.value = current_settings["pay_day_1"]
-        self.input_pd2 = toga.NumberInput(step="1", min_value=1, max_value=31, on_change=self.on_settings_change, style=Pack(flex=1))
+        self.input_pd2 = toga.NumberInput(step=1, min=1, max=31, on_change=self.on_settings_change, style=Pack(flex=1))
         self.input_pd2.value = current_settings["pay_day_2"]
 
         self.lbl_yearly_gross = toga.Label("$0.00", style=Pack(font_weight='bold', text_align='right', flex=1))
