@@ -50,7 +50,6 @@ class MainController:
                     py = year - 1 if month == 1 else year
                     _, p_last = calendar.monthrange(py, pm)
                     
-                    # FIX: Use timedelta to safely roll over end-of-month boundaries
                     start1 = datetime.date(py, pm, min(ppe1, p_last)) + datetime.timedelta(days=1)
                     end1 = datetime.date(py, pm, min(ppe2, p_last))
                     date1 = datetime.date(year, month, min(pd1, last_day))
@@ -63,13 +62,11 @@ class MainController:
                     end1 = datetime.date(year, month, min(ppe1, last_day))
                     date1 = datetime.date(year, month, min(pd1, last_day))
                     
-                    # FIX: Use timedelta to safely roll over end-of-month boundaries
                     start2 = datetime.date(year, month, min(ppe1, last_day)) + datetime.timedelta(days=1)
                     end2 = datetime.date(year, month, min(ppe2, last_day))
                     date2 = datetime.date(year, month, min(pd2, last_day))
 
                 for start, end, p_date in [(start1, end1, date1), (start2, end2, date2)]:
-                    # Graceful degradation if dates invert due to user edge-case settings
                     if start > end: continue
                     
                     hours = self._count_weekdays(start, end) * 8.0
@@ -83,7 +80,6 @@ class MainController:
                     })
                     
         elif schedule == "Monthly":
-            # For a monthly schedule, we only use the primary inputs (pd1 and ppe1)
             is_lagged = pd1 < ppe1
             for month in range(1, 13):
                 _, last_day = calendar.monthrange(year, month)

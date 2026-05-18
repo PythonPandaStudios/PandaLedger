@@ -226,7 +226,7 @@ class PandaLedger(toga.App):
             # Dynamically push boundaries mapping to Toga OS-window constraints
             self.settings_window.size = (450, new_height)
 
-            # Map the transient dictionary securely
+            # Map the transient dictionary securely (Defaults added to prevent evaluation crashes)
             temp_settings = {
                 'pay_type': self.input_pay_type.value, 
                 'schedule': self.input_schedule.value,
@@ -242,6 +242,7 @@ class PandaLedger(toga.App):
             
             estimates = self.controller.calculate_estimates(temp_settings)
             
+            # Formats and binds previews to the Settings UI ONLY (Does not touch the Main UI)
             self.lbl_yearly_gross.text = f"${estimates['yearly_gross']:,.2f}"
             self.lbl_yearly_net.text = f"${estimates['yearly_net']:,.2f}"
             self.lbl_yearly_savings.text = f"${estimates['yearly_savings']:,.2f}"
@@ -253,34 +254,49 @@ class PandaLedger(toga.App):
 
     async def handle_save_settings(self, widget):
         try:
+            # Safely capture inputs; Fallbacks added so hidden monthly fields don't throw an error when blanked out
             data = {
                 'pay_type': self.input_pay_type.value, 
                 'schedule': self.input_schedule.value,
-                'pay_rate': float(self.input_rate.value), 
-                'hours_per_period': float(self.input_hours.value),
-                'tax_rate_percent': float(self.input_tax.value), 
-                'savings_rate_percent': float(self.input_savings.value),
-                'pay_day_1': int(self.input_pd1.value), 
-                'pay_day_2': int(self.input_pd2.value),
-                'pay_period_end_1': int(self.input_ppe1.value), 
-                'pay_period_end_2': int(self.input_ppe2.value)
+                'pay_rate': float(self.input_rate.value or 0), 
+                'hours_per_period': float(self.input_hours.value or 0),
+                'tax_rate_percent': float(self.input_tax.value or 0), 
+                'savings_rate_percent': float(self.input_savings.value or 0),
+                'pay_day_1': int(self.input_pd1.value or 1), 
+                'pay_day_2': int(self.input_pd2.value or 1),
+                'pay_period_end_1': int(self.input_ppe1.value or 1), 
+                'pay_period_end_2': int(self.input_ppe2.value or 1)
             }
+            
             success = self.controller.save_payroll_settings(data)
+            
             if success:
+                self.subtitle_label.text = f"{data['schedule']} | Tax: {data['tax_rate_percent']}%"
                 self.settings_window.close()
                 self.refresh_ui()
                 await self.main_window.dialog(toga.InfoDialog("Success", "Settings secured."))
             else:
                 await self.main_window.dialog(toga.ErrorDialog("Error", "Save failed."))
-        except ValueError:
-            await self.main_window.dialog(toga.ErrorDialog("Error", "Invalid inputs."))
+        except Exception as e:
+            await self.main_window.dialog(toga.ErrorDialog("Error", f"Invalid inputs: {str(e)}"))
 
     def refresh_ui(self):
+        """Pulls fresh data and STRICTLY mutates the Toga ListSources to ensure OS Repaint triggers."""
         stats = self.controller.get_annual_stats()
         self.lbl_gross.text = stats["gross"]
         self.lbl_net.text = stats["net"]
         self.lbl_sav.text = stats["savings"]
-        self.year_table.data = self.controller.get_year_overview_table()
+        
+        # FIX: Directly mutate the observer via clear() and append() instead of breaking the reference
+        self.year_table.data.clear()
+        for row in self.controller.get_year_overview_table():
+            self.year_table.data.append(row)
+            
+        for idx, table in enumerate(self.month_tables):
+            real_month_num = idx + 2 
+            table.data.clear()
+            for row in self.controller.get_month_transactions(real_month_num):
+                table.data.append(row)
 
 def main():
     return PandaLedger()
