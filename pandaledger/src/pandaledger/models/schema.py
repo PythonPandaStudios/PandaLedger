@@ -24,13 +24,17 @@ class PayrollSettings(Base):
     __tablename__ = "payroll_settings"
     
     id = Column(Integer, primary_key=True, index=True)
-    schedule = Column(String, nullable=False, default="Semi-Monthly")
-    hourly_rate = Column(Float, nullable=False, default=0.0)
-    federal_tax_rate = Column(Float, nullable=False, default=0.0)
-    state_tax_rate = Column(Float, nullable=False, default=0.0)
+    pay_type = Column(String, default="Hourly")          # 'Hourly' or 'Salary'
+    schedule = Column(String, default="Semi-Monthly")    # 'Weekly', 'Bi-Weekly', 'Semi-Monthly', 'Monthly'
+    pay_rate = Column(Float, default=45.78)              # Hourly rate or Yearly Salary
+    hours_per_period = Column(Float, default=86.67)      # Avg hours per paycheck (Dynamic field)
+    tax_rate_percent = Column(Float, default=20.0)       # Estimated combined tax burden
+    savings_rate_percent = Column(Float, default=10.0)   # Savings goal for psychological momentum
 
 class PayrollSettingsUpdate(BaseModel):
+    pay_type: str
     schedule: str
-    hourly_rate: float = Field(..., ge=0)
-    federal_tax_rate: float = Field(..., ge=0, le=100)
-    state_tax_rate: float = Field(..., ge=0, le=100)
+    pay_rate: float = Field(..., ge=0)
+    hours_per_period: float = Field(..., ge=0)
+    tax_rate_percent: float = Field(..., ge=0, le=100)
+    savings_rate_percent: float = Field(..., ge=0, le=100)
