@@ -49,9 +49,12 @@ class MainController:
                     pm = 12 if month == 1 else month - 1
                     py = year - 1 if month == 1 else year
                     _, p_last = calendar.monthrange(py, pm)
-                    start1 = datetime.date(py, pm, min(ppe1, p_last) + 1)
+                    
+                    # FIX: Use timedelta to safely roll over end-of-month boundaries
+                    start1 = datetime.date(py, pm, min(ppe1, p_last)) + datetime.timedelta(days=1)
                     end1 = datetime.date(py, pm, min(ppe2, p_last))
                     date1 = datetime.date(year, month, min(pd1, last_day))
+                    
                     start2 = datetime.date(year, month, 1)
                     end2 = datetime.date(year, month, min(ppe1, last_day))
                     date2 = datetime.date(year, month, min(pd2, last_day))
@@ -59,16 +62,21 @@ class MainController:
                     start1 = datetime.date(year, month, 1)
                     end1 = datetime.date(year, month, min(ppe1, last_day))
                     date1 = datetime.date(year, month, min(pd1, last_day))
-                    start2 = datetime.date(year, month, min(ppe1, last_day) + 1)
+                    
+                    # FIX: Use timedelta to safely roll over end-of-month boundaries
+                    start2 = datetime.date(year, month, min(ppe1, last_day)) + datetime.timedelta(days=1)
                     end2 = datetime.date(year, month, min(ppe2, last_day))
                     date2 = datetime.date(year, month, min(pd2, last_day))
 
                 for start, end, p_date in [(start1, end1, date1), (start2, end2, date2)]:
+                    # Graceful degradation if dates invert due to user edge-case settings
                     if start > end: continue
+                    
                     hours = self._count_weekdays(start, end) * 8.0
                     gross = (hours * pay_rate) if pay_type == "Hourly" else (pay_rate / 24)
                     net = gross * (1.0 - tax_rate / 100.0)
                     cumulative_net += net
+                    
                     schedule_data.append({
                         "date": p_date, "hours": hours, "rate": pay_rate, 
                         "gross": gross, "net": net, "remaining": cumulative_net
