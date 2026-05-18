@@ -19,21 +19,57 @@ class PandaLedger(toga.App):
         header_box.add(title_box)
 
         # --- 2. Menu Bar Commands ---
-        # Grouped under toga.Group.APP to force placement under the "Panda Ledger" OS Menu
+        
+        # 1. Application Menu (toga.Group.APP) - OS Native "Panda Ledger" drop-down
         settings_cmd = toga.Command(
             self.show_payroll_settings,
             text="Payroll Settings",
             shortcut=toga.Key.MOD_1 + "S",
-            group=toga.Group.APP
-        )
-        
-        help_cmd = toga.Command(
-            self.show_help_dialog,
-            text="Help & Documentation",
-            group=toga.Group.APP
+            group=toga.Group.SETTINGS
         )
 
-        self.commands.add(settings_cmd, help_cmd)
+        # 2. File Menu (toga.Group.FILE) - Standard OS File drop-down
+        export_cmd = toga.Command(
+            self.mock_action, # Replace with actual handler
+            text="Export Ledger to CSV...",
+            shortcut=toga.Key.MOD_1 + "E",
+            group=toga.Group.FILE
+        )
+        import_cmd = toga.Command(
+            self.mock_action, 
+            text="Import Transactions...",
+            group=toga.Group.FILE,
+            section=2 # Creates a visual divider line
+        )
+
+        # 3. Custom Menu: "Reports" - Creates a brand new top-level drop-down
+        # Order parameter determines where it sits left-to-right on the bar
+        reports_group = toga.Group("Reports", order=30)
+        
+        tax_report_cmd = toga.Command(
+            self.mock_action,
+            text="Generate Tax Summary",
+            shortcut=toga.Key.MOD_1 + "T",
+            group=reports_group
+        )
+        
+        # 4. Help Menu (toga.Group.HELP) - Standard OS Help drop-down
+        # Moving Help here is better practice than putting it under the App menu
+        
+        #about_cmd = toga.Command(
+        #    self.mock_action,
+        #    text="About Panda Ledger",
+        #    group=toga.Group.HELP,
+        #    section=2
+        #)
+
+        # Register ALL commands with the application to build the menu bar
+        self.commands.add(
+            settings_cmd, 
+            export_cmd, import_cmd, 
+            tax_report_cmd, 
+            #about_cmd
+        )
 
         # --- 3. Main Navigation (Tabs) ---
         self.tabs = toga.OptionContainer(style=Pack(flex=1))
@@ -80,9 +116,6 @@ class PandaLedger(toga.App):
         self.month_tables.append(ledger_table)
         month_box.add(ledger_table)
         self.tabs.content.append(month_name, month_box)
-
-    async def show_help_dialog(self, widget):
-        await self.main_window.dialog(toga.InfoDialog("Panda Ledger Help", "Local-first payroll and transaction management. Use 'Settings' to adjust your income calendar."))
 
     def show_payroll_settings(self, widget):
         current_settings = self.controller.get_payroll_settings()
@@ -279,6 +312,12 @@ class PandaLedger(toga.App):
             table.data.clear()
             for row in self.controller.get_month_transactions(real_month_num):
                 table.data.append(row)
+    
+    async def mock_action(self, widget):
+        """Temporary handler for new menu bar items."""
+        await self.main_window.dialog(
+            toga.InfoDialog("Coming Soon", f"The '{widget.text}' feature is currently under development.")
+        )
 
 # Explicitly declare App Name / Identifier to assert control over native OS Menus
 def main():
