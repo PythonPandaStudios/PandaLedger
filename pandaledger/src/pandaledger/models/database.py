@@ -1,71 +1,78 @@
-import os
 import logging
-from sqlalchemy import create_engine, event
+from pathlib import Path
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
-import toga
 
-# Setup basic console logging
-logging.basicConfig(level=logging.INFO)
+# Initialize module logger
 logger = logging.getLogger(__name__)
 
+# --- 1. Base Model Definition ---
 Base = declarative_base()
 
-def get_database_path() -> str:
-    """
-    Resolves the OS-specific path for the SQLite database.
-    Detects if running in a Briefcase/Toga context.
-    """
-    app = toga.App.app
-    db_name = "panda_ledger.db"
+# --- 2. Path Resolution (Enforcing Local-First DB storage) ---
+# Maps the SQLite database to a secure, user-specific OS directory
+HOME_DIR = Path.home() / ".pandaledger"
+HOME_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = HOME_DIR / "panda_ledger.db"
 
-    # Implement a path resolver that detects if it's running in a Briefcase context.
-    if app is not None and hasattr(app, 'paths'):
-        # SQLite connection string defaults to app.paths.data when running as a packaged app.
-        data_dir = app.paths.data
-    else:
-        # On Desktop, we use local folders (Fallback for raw script execution)
-        data_dir = os.path.join(os.path.expanduser("~"), ".pandaledger")
+# --- 3. Engine Configuration ---
+# 'check_same_thread': False is explicitly required so Toga's async background 
+# workers can query the database without triggering SQLite thread violations.
+engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={'check_same_thread': False})
 
-    # Ensure the directory actually exists before SQLite attempts to write
-    os.makedirs(data_dir, exist_ok=True)
+# --- 4. Session Factory ---
+Session = sessionmaker(bind=engine)
+
+def run_migrations(engine):
+    """
+    Lightweight Data Migration Utility for SQLite.
+    Detects if the schema has evolved and securely injects new columns 
+    into existing tables without destroying the user's historical ledger data.
+    """
+    inspector = inspect(engine)
     
-    return os.path.join(data_dir, db_name)
+    # Check if the payroll_settings table exists before trying to migrate it
+    if 'payroll_settings' in inspector.get_table_names():
+        # Map out the existing columns currently in the SQLite file
+        existing_columns = [col['name'] for col in inspector.get_columns('payroll_settings')]
+        
+        with engine.begin() as conn:
+            # Dynamically inject missing columns based on our V2 Payroll Schema updates
+            if 'pay_type' not in existing_columns:
+                conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN pay_type VARCHAR DEFAULT 'Hourly'"))
+                logger.info("Migration: Injected 'pay_type' column into payroll_settings")
+                
+            if 'pay_rate' not in existing_columns:
+                conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN pay_rate FLOAT DEFAULT 45.78"))
+                logger.info("Migration: Injected 'pay_rate' column into payroll_settings")
+                
+            if 'hours_per_period' not in existing_columns:
+                conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN hours_per_period FLOAT DEFAULT 86.67"))
+                logger.info("Migration: Injected 'hours_per_period' column into payroll_settings")
+                
+            if 'tax_rate_percent' not in existing_columns:
+                conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN tax_rate_percent FLOAT DEFAULT 20.0"))
+                logger.info("Migration: Injected 'tax_rate_percent' column into payroll_settings")
+                
+            if 'savings_rate_percent' not in existing_columns:
+                conn.execute(text("ALTER TABLE payroll_settings ADD COLUMN savings_rate_percent FLOAT DEFAULT 10.0"))
+                logger.info("Migration: Injected 'savings_rate_percent' column into payroll_settings")
 
-def init_database():
+def init_db():
     """
-    Initializes the database engine, configures WAL mode, and returns a session factory.
+    Bootstraps the SQLite database engine.
+    Creates tables if completely missing, or runs migrations if the schema has evolved.
     """
-    db_path = get_database_path()
-    connection_string = f"sqlite:///{db_path}"
-
-    # Initialize engine with thread-safety for GUI event loops
-    engine = create_engine(
-        connection_string,
-        connect_args={"check_same_thread": False}, 
-        echo=False
-    )
-
-    # Enforce explicit write-ahead logging (WAL mode) for data integrity
-    @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.close()
-
-    # --- THE FIX ---
-    # Explicitly import the schema here so SQLAlchemy's Base registers 
-    # the Transaction model BEFORE it attempts to create the tables.
-    import pandaledger.models.schema 
+    # Local import to prevent circular dependency crashes with schema.py
+    from . import schema 
     
-    # Bind models
+    # SQLAlchemy create_all is safe; it will skip tables that already exist
     Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     
-    # Log a success message to the console verifying a successful connection
-    logger.info(f"SUCCESS: Connected to database at {db_path}")
+    # Run our custom schema evolution check to patch old tables
+    run_migrations(engine)
     
-    return SessionLocal
+    logger.info(f"SUCCESS: Connected to database at {DB_PATH}")
 
-# Global session factory
-Session = init_database()
+# Fire DB initialization immediately on module load
+init_db()
