@@ -12,11 +12,15 @@ author_email = "dev@pythonpandastudios.com"
 [tool.briefcase.app.pandaledger]
 formal_name = "PandaLedger"
 description = "Cross-platform financial powerhouse and gamified ledger."
-long_description = """More details about the app should go here.
-"""
+long_description = """More details about the app should go here."""
+
+# Point to your .icns file (omit the extension)
+icon = "assets/PandaLedger"
+
 sources = [
     "src/pandaledger",
 ]
+
 test_sources = [
     "tests",
 ]
@@ -37,6 +41,8 @@ requires = [
     "toga-cocoa~=0.5.0",
     "std-nslog~=1.0.3",
 ]
+# Point to your .icns file (omit the extension)
+icon = "assets/PandaLedger"
 
 [tool.briefcase.app.pandaledger.linux]
 requires = [
@@ -46,6 +52,8 @@ requires = [
     # older) releases, you can remove this version pin. See beeware/toga#3143.
     "pygobject < 3.52.1",
 ]
+# Point to your .icns file (omit the extension)
+icon = "assets/PandaLedger"
 
 [tool.briefcase.app.pandaledger.linux.system.debian]
 system_requires = [
@@ -165,6 +173,8 @@ flatpak_runtime_version = "48"
 flatpak_sdk = "org.gnome.Sdk"
 
 [tool.briefcase.app.pandaledger.windows]
+# Point to your .icns file (omit the extension)
+icon = "assets/PandaLedger"
 requires = [
     "toga-winforms~=0.5.0",
 ]
@@ -175,11 +185,16 @@ requires = [
     "toga-iOS~=0.5.0",
     "std-nslog~=1.0.3",
 ]
+# Point to your .icns file (omit the extension)
+icon = "assets/PandaLedger"
 
 [tool.briefcase.app.pandaledger.android]
 requires = [
     "toga-android~=0.5.0",
 ]
+
+# Point to your .icns file (omit the extension)
+icon = "assets/PandaLedger"
 
 base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
 
