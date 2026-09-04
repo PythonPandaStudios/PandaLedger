@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from travertino.constants import HIDDEN, VISIBLE
-
 from pandaledger.models.schema import FilingStatus, IncomeType, PayScheduleType
 from pandaledger.views.theme import LIGHT_PALETTE
 from pandaledger.views.wizard.income_source_step import IncomeSourceStep
@@ -18,23 +16,39 @@ def test_skipped_by_default() -> None:
     assert step.result is None
 
 
-def test_fields_start_hidden() -> None:
+def test_fields_start_detached_from_the_container() -> None:
+    """Fields are structurally absent when off, not just styled hidden.
+
+    Pack's `visibility` style isn't implemented by the GTK backend at
+    all, so hiding must be structural (not in the parent's children) to
+    actually work on a real window.
+    """
     step = IncomeSourceStep()
     box = step.build(LIGHT_PALETTE)
 
-    assert box is not None
     assert step._fields_box is not None
-    assert step._fields_box.style.visibility == HIDDEN
+    assert step._fields_box not in box.children
 
 
-def test_toggling_on_reveals_the_fields() -> None:
+def test_toggling_on_attaches_the_fields() -> None:
     step = IncomeSourceStep()
-    step.build(LIGHT_PALETTE)
+    box = step.build(LIGHT_PALETTE)
 
     step._enabled_switch.value = True
 
     assert step._fields_box is not None
-    assert step._fields_box.style.visibility == VISIBLE
+    assert step._fields_box in box.children
+
+
+def test_toggling_off_again_detaches_the_fields() -> None:
+    step = IncomeSourceStep()
+    box = step.build(LIGHT_PALETTE)
+
+    step._enabled_switch.value = True
+    step._enabled_switch.value = False
+
+    assert step._fields_box is not None
+    assert step._fields_box not in box.children
 
 
 def test_enabled_but_blank_name_is_rejected() -> None:

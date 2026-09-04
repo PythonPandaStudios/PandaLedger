@@ -189,5 +189,12 @@ class WizardWindow(toga.MainWindow):
             )
 
         self._session.commit()
-        self.close()
+        # on_complete (PandaLedgerApp._show_main_window) must run BEFORE
+        # close(): Window.close() on whichever window is currently
+        # app.main_window doesn't just close it — it calls
+        # app.request_exit(), quitting the whole app, since Toga treats
+        # closing "the" main window as a request to exit. on_complete
+        # reassigns app.main_window to the real shell first, so closing
+        # the wizard afterward is just closing an ordinary window.
         self._on_complete()
+        self.close()

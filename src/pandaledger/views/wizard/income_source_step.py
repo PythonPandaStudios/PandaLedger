@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import toga
 from toga.style import Pack
-from travertino.constants import COLUMN, HIDDEN, VISIBLE
+from travertino.constants import COLUMN
 
 from pandaledger.models.schema import FilingStatus, IncomeType, PayScheduleType
 from pandaledger.views.theme import Palette
@@ -69,7 +69,9 @@ class IncomeSourceStep:
         self._schedule_selection = toga.Selection(items=list(_SCHEDULE_LABELS.values()))
         self._filing_status_selection = toga.Selection(items=list(_FILING_STATUS_LABELS.values()))
         self._state_code_input = toga.TextInput(placeholder="e.g. CO")
+        self._container: toga.Box | None = None
         self._fields_box: toga.Box | None = None
+        self._fields_attached = False
 
     def build(self, palette: Palette) -> toga.Box:
         """Build this step's form.
@@ -99,11 +101,20 @@ class IncomeSourceStep:
             ],
             style=Pack(direction=COLUMN),
         )
-        self._fields_box.style.visibility = VISIBLE if self._enabled_switch.value else HIDDEN
-        return toga.Box(
-            children=[heading, description, self._enabled_switch, self._fields_box],
+        self._container = toga.Box(
+            children=[heading, description, self._enabled_switch],
             style=Pack(direction=COLUMN),
         )
+        # Attached/detached structurally rather than toggled via Pack's
+        # `visibility` style: toga-gtk doesn't implement that property at
+        # all (confirmed empirically, not just untested) — the fields
+        # stayed visible regardless of the switch on a real window.
+        # Structural add()/remove() has no such backend gap.
+        self._fields_attached = False
+        if self._enabled_switch.value:
+            self._container.add(self._fields_box)
+            self._fields_attached = True
+        return self._container
 
     def validate(self) -> str | None:
         """Check the current field values, if this step is enabled.
@@ -152,11 +163,17 @@ class IncomeSourceStep:
         )
 
     def _on_toggle(self, widget: toga.Switch) -> None:
-        """Show or hide the income-source fields to match the switch.
+        """Attach or detach the income-source fields to match the switch.
 
         Args:
             widget: The switch that changed (unused; the current value is
                 read from ``self._enabled_switch`` instead).
         """
-        if self._fields_box is not None:
-            self._fields_box.style.visibility = VISIBLE if self._enabled_switch.value else HIDDEN
+        if self._container is None or self._fields_box is None:
+            return
+        if self._enabled_switch.value and not self._fields_attached:
+            self._container.add(self._fields_box)
+            self._fields_attached = True
+        elif not self._enabled_switch.value and self._fields_attached:
+            self._container.remove(self._fields_box)
+            self._fields_attached = False
