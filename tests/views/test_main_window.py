@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import pytest
 import toga
+from travertino.colors import Color
 
 from pandaledger.app import PandaLedgerApp, main
 from pandaledger.views.main_window import NAV_ITEMS, MainWindow
+from pandaledger.views.theme import DARK_PALETTE, LIGHT_PALETTE, ThemeMode
+
+# Pack's background_color/color properties store a parsed `Color`, not the
+# raw hex string that was assigned, so comparisons need both sides parsed.
+_color = Color.parse
 
 
 @pytest.fixture
@@ -67,3 +73,41 @@ def test_reselecting_the_active_item_is_a_no_op(started_app: PandaLedgerApp) -> 
     main_window._select("Budget")
 
     assert main_window._content_pane.children[0] is current_child
+
+
+def test_starts_styled_with_the_light_palette(started_app: PandaLedgerApp) -> None:
+    """Nav chrome is styled with the light palette by default."""
+    main_window = started_app.shell
+
+    assert main_window._nav_column.style.background_color == _color(LIGHT_PALETTE.surface)
+    assert main_window._content_pane.style.background_color == _color(LIGHT_PALETTE.background)
+    for button in main_window._nav_buttons.values():
+        assert button.style.background_color == _color(LIGHT_PALETTE.surface)
+        assert button.style.color == _color(LIGHT_PALETTE.text)
+
+
+def test_toggling_theme_restyles_nav_chrome(started_app: PandaLedgerApp) -> None:
+    """Switching to dark mode re-colors the nav column, buttons, and content pane."""
+    main_window = started_app.shell
+
+    started_app.theme.toggle()
+
+    assert started_app.theme.mode is ThemeMode.DARK
+    assert main_window._nav_column.style.background_color == _color(DARK_PALETTE.surface)
+    assert main_window._content_pane.style.background_color == _color(DARK_PALETTE.background)
+    for button in main_window._nav_buttons.values():
+        assert button.style.background_color == _color(DARK_PALETTE.surface)
+        assert button.style.color == _color(DARK_PALETTE.text)
+
+
+def test_toggling_theme_rebuilds_the_active_section_in_place(started_app: PandaLedgerApp) -> None:
+    """The currently visible section is rebuilt (same label) after a theme switch."""
+    main_window = started_app.shell
+    main_window._select("Paycheck")
+
+    started_app.theme.toggle()
+
+    assert main_window._active_label == "Paycheck"
+    heading = main_window._content_pane.children[0].children[0]
+    assert isinstance(heading, toga.Label)
+    assert heading.text == "Paycheck"

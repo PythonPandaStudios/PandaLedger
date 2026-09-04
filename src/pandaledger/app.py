@@ -11,6 +11,7 @@ from __future__ import annotations
 import toga
 
 from pandaledger.views.main_window import MainWindow
+from pandaledger.views.theme import ThemeManager
 
 
 class PandaLedgerApp(toga.App):
@@ -20,12 +21,20 @@ class PandaLedgerApp(toga.App):
         """Build and show the main window.
 
         Toga calls this once, after platform backend initialization, to let
-        the app construct its first window(s).
+        the app construct its first window(s). The theme manager is created
+        first since the main window (and every screen it builds) reads the
+        active palette from it.
         """
-        shell = MainWindow(app=self)
+        self._theme = ThemeManager()
+        shell = MainWindow(formal_name=self.formal_name, theme=self._theme)
         self._shell = shell
         self.main_window = shell
         shell.show()
+
+    @property
+    def theme(self) -> ThemeManager:
+        """The app's theme manager (PRD §7.1 light/dark theme)."""
+        return self._theme
 
     @property
     def shell(self) -> MainWindow:

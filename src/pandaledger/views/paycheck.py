@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import toga
 
+from pandaledger.views.theme import ThemeManager
 from pandaledger.views.widgets import section_box
 
 
-def build_paycheck_view() -> toga.Box:
+def build_paycheck_view(theme: ThemeManager) -> toga.Box:
     """Build the Paycheck nav section's root widget.
+
+    Args:
+        theme: The app's theme manager, for the active color palette.
 
     Returns:
         A ``toga.Box`` containing the Paycheck screen's current (empty-state)
@@ -26,4 +30,5 @@ def build_paycheck_view() -> toga.Box:
             "No income sources yet. Add one from first-run setup to see a "
             "withholding-accurate paycheck estimate here."
         ),
+        palette=theme.palette,
     )

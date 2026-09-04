@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import toga
 
+from pandaledger.views.theme import ThemeManager
 from pandaledger.views.widgets import section_box
 
 
-def build_savings_view() -> toga.Box:
+def build_savings_view(theme: ThemeManager) -> toga.Box:
     """Build the Savings nav section's root widget.
+
+    Args:
+        theme: The app's theme manager, for the active color palette.
 
     Returns:
         A ``toga.Box`` containing the Savings screen's current (empty-state)
@@ -26,4 +30,5 @@ def build_savings_view() -> toga.Box:
             "No savings goal yet. Pick a savings strategy during first-run "
             "setup to see recommendations and progress here."
         ),
+        palette=theme.palette,
     )

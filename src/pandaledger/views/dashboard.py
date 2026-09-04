@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import toga
 
+from pandaledger.views.theme import ThemeManager
 from pandaledger.views.widgets import section_box
 
 
-def build_dashboard_view() -> toga.Box:
+def build_dashboard_view(theme: ThemeManager) -> toga.Box:
     """Build the Dashboard nav section's root widget.
+
+    Args:
+        theme: The app's theme manager, for the active color palette.
 
     Returns:
         A ``toga.Box`` containing the Dashboard's current (empty-state)
@@ -28,4 +32,5 @@ def build_dashboard_view() -> toga.Box:
             "from the Import screen to see your budget, next paycheck "
             "estimate, and savings progress here."
         ),
+        palette=theme.palette,
     )

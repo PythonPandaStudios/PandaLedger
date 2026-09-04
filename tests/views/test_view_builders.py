@@ -7,6 +7,8 @@ guarantees each nav item actually renders distinct content.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 import toga
 
@@ -16,9 +18,10 @@ from pandaledger.views.import_view import build_import_view
 from pandaledger.views.paycheck import build_paycheck_view
 from pandaledger.views.savings import build_savings_view
 from pandaledger.views.settings import build_settings_view
+from pandaledger.views.theme import ThemeManager
 from pandaledger.views.transactions import build_transactions_view
 
-BUILDERS_AND_TITLES: tuple[tuple[object, str], ...] = (
+BUILDERS_AND_TITLES: tuple[tuple[Callable[[ThemeManager], toga.Box], str], ...] = (
     (build_dashboard_view, "Dashboard"),
     (build_transactions_view, "Transactions"),
     (build_budget_view, "Budget"),
@@ -30,9 +33,11 @@ BUILDERS_AND_TITLES: tuple[tuple[object, str], ...] = (
 
 
 @pytest.mark.parametrize("builder, expected_title", BUILDERS_AND_TITLES)
-def test_builder_returns_box_with_matching_heading(builder: object, expected_title: str) -> None:
+def test_builder_returns_box_with_matching_heading(
+    builder: Callable[[ThemeManager], toga.Box], expected_title: str
+) -> None:
     """Each builder returns a Box whose heading Label matches its section."""
-    box = builder()  # type: ignore[operator]
+    box = builder(ThemeManager())
 
     assert isinstance(box, toga.Box)
     assert len(box.children) >= 1
@@ -42,9 +47,13 @@ def test_builder_returns_box_with_matching_heading(builder: object, expected_tit
 
 
 @pytest.mark.parametrize("builder, _", BUILDERS_AND_TITLES)
-def test_builder_returns_a_fresh_instance_each_call(builder: object, _: str) -> None:
+def test_builder_returns_a_fresh_instance_each_call(
+    builder: Callable[[ThemeManager], toga.Box], _: str
+) -> None:
     """Each call returns a distinct Box, since a Toga widget can only have one parent."""
-    first = builder()  # type: ignore[operator]
-    second = builder()  # type: ignore[operator]
+    theme = ThemeManager()
+
+    first = builder(theme)
+    second = builder(theme)
 
     assert first is not second

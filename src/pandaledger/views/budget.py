@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import toga
 
+from pandaledger.views.theme import ThemeManager
 from pandaledger.views.widgets import section_box
 
 
-def build_budget_view() -> toga.Box:
+def build_budget_view(theme: ThemeManager) -> toga.Box:
     """Build the Budget nav section's root widget.
+
+    Args:
+        theme: The app's theme manager, for the active color palette.
 
     Returns:
         A ``toga.Box`` containing the Budget screen's current (empty-state)
@@ -26,4 +30,5 @@ def build_budget_view() -> toga.Box:
             "No budget plan yet. Pick a budgeting strategy during first-run "
             "setup to see category caps and suggestions here."
         ),
+        palette=theme.palette,
     )
