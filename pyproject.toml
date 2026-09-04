@@ -1,0 +1,114 @@
+[project]
+name = "pandaledger"
+version = "0.1.0"
+description = "Local-first personal budgeting and payroll-forecasting desktop app."
+authors = [
+    { name = "Python Panda Studios", email = "jefpadfi@pm.me" },
+]
+requires-python = ">=3.12"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    # Depend on toga-core + the Linux backend directly rather than the
+    # `toga` metapackage: the metapackage unconditionally pulls in
+    # toga-winforms (Windows) and toga-cocoa (macOS) requirement branches,
+    # and toga-winforms's `pythonnet` pin has no version spanning Poetry's
+    # unbounded-upper `requires-python` solve, which breaks `poetry lock`
+    # even though those backends are never installed on Linux (PRD §4: v1
+    # targets Linux Mint only).
+    "toga-core>=0.5.6,<0.6",
+    "toga-gtk>=0.5.6,<0.6 ; sys_platform == 'linux'",
+    "sqlalchemy>=2.0,<3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/PythonPandaStudios/PandaLedger"
+
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "pandaledger", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+pytest-cov = "^6.0"
+ruff = "^0.8"
+mypy = "^1.13"
+briefcase = "^0.3.20"
+toga-dummy = "^0.5.6"
+# toga-dummy 0.5.6 imports PIL in its screens backend without declaring it
+# as a dependency; pinned explicitly so headless tests don't break on it.
+pillow = "^11.0"
+
+# --- Briefcase packaging config -------------------------------------------
+# v1 target is Linux Mint (Debian-family .deb) per PRD §4. Briefcase reads
+# project metadata (name/version/authors) from [project] above.
+[tool.briefcase]
+project_name = "PandaLedger"
+bundle = "studios.pythonpanda"
+version = "0.1.0"
+url = "https://github.com/PythonPandaStudios/PandaLedger"
+license.file = "LICENSE"
+author = "Python Panda Studios"
+author_email = "jefpadfi@pm.me"
+
+[tool.briefcase.app.pandaledger]
+formal_name = "PandaLedger"
+description = "Local-first personal budgeting and payroll-forecasting desktop app."
+long_description = "PandaLedger imports your bank statements, learns how to categorize your spending, builds a monthly budget, estimates your next paycheck after real tax withholding, and tells you how much you can safely save. No data leaves your machine."
+sources = ["src/pandaledger"]
+test_sources = ["tests"]
+requires = []
+test_requires = ["pytest"]
+
+[tool.briefcase.app.pandaledger.linux]
+requires = []
+
+[tool.briefcase.app.pandaledger.linux.system.debian]
+system_requires = [
+    "libgirepository1.0-dev",
+    "libcairo2-dev",
+    "libcanberra-gtk3-module",
+    "gir1.2-gtk-3.0",
+]
+system_runtime_requires = [
+    "gir1.2-gtk-3.0",
+    "libcanberra-gtk3-module",
+    "libgtksourceview-3.0-1",
+]
+
+# --- Lint / format ----------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pandaledger"]
+
+# --- Type checking -----------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = "toga_dummy.*"
+ignore_missing_imports = true
+
+# travertino (Toga's style/layout engine) ships no py.typed marker.
+[[tool.mypy.overrides]]
+module = "travertino.*"
+ignore_missing_imports = true
+
+# --- Tests --------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
