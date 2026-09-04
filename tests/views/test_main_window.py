@@ -17,9 +17,18 @@ _color = Color.parse
 
 @pytest.fixture
 def started_app() -> PandaLedgerApp:
-    """A ``PandaLedgerApp`` that has completed ``startup()`` on the dummy backend."""
+    """A ``PandaLedgerApp`` on the dummy backend, past the first-run wizard.
+
+    A fresh test database has no Account yet, so ``_startup()`` shows the
+    first-run wizard rather than the main window (see
+    ``tests/views/wizard/test_wizard_window.py`` for wizard-specific
+    coverage). These tests are about the main window's own nav/theme
+    behavior, so the fixture calls the same ``_show_main_window`` the
+    wizard's "Finish" button would, to get there directly.
+    """
     app = main()
     app._startup()
+    app._show_main_window()
     return app
 
 
